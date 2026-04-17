@@ -140,7 +140,7 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
       { axis: "Shots",        key: "shots",         invert: false },
       { axis: "Big Chances",  key: "bigChances",    invert: false },
       { axis: "Set Piece xG", key: "setPiecexG",    invert: false },
-      { axis: "Fouls (inv)",  key: "fouls",         invert: true  },
+      { axis: "1st Half xG",  key: "firstHalfxG",   invert: false },
     ];
 
     return axes.map(({ axis, key, invert }) => {
