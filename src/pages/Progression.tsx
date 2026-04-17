@@ -1,0 +1,165 @@
+import { useMemo, useState } from "react";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { buildPositionByGW, buildProgression, type ProgressionMetric } from "../lib/derive";
+import { useWorkbook } from "../store/workbook";
+
+type View = "table" | "line" | "bump";
+
+const METRICS: { key: ProgressionMetric; label: string }[] = [
+  { key: "points", label: "Points" },
+  { key: "goalsScored", label: "Goals Scored" },
+  { key: "goalsConceded", label: "Goals Conceded" },
+  { key: "xG", label: "xG" },
+  { key: "xGA", label: "xGA" },
+];
+
+export function Progression() {
+  const matches = useWorkbook((s) => s.matches);
+  const [metric, setMetric] = useState<ProgressionMetric>("points");
+  const [view, setView] = useState<View>("table");
+
+  const prog = useMemo(() => buildProgression(matches, metric), [matches, metric]);
+  const bump = useMemo(() => (view === "bump" ? buildPositionByGW(matches) : null), [matches, view]);
+
+  const sortedSeries = useMemo(() => {
+    return [...prog.series].sort((a, b) => {
+      const av = a.values.at(-1) ?? 0;
+      const bv = b.values.at(-1) ?? 0;
+      return (bv ?? 0) - (av ?? 0);
+    });
+  }, [prog.series]);
+
+  const lineData = useMemo(() => {
+    return prog.gameweeks.map((gw, i) => {
+      const row: Record<string, number | null> = { gameweek: gw };
+      for (const s of prog.series) row[s.team] = s.values[i];
+      return row;
+    });
+  }, [prog]);
+
+  const bumpData = useMemo(() => {
+    if (!bump) return null;
+    return bump.gameweeks.map((gw, i) => {
+      const row: Record<string, number | null> = { gameweek: gw };
+      for (const s of bump.series) row[s.team] = s.positions[i];
+      return row;
+    });
+  }, [bump]);
+
+  return (
+    <div>
+      <div className="card">
+        <h2 className="card-title">Team Progression</h2>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="tabs" style={{ borderBottom: "none", margin: 0 }}>
+            {METRICS.map((m) => (
+              <button
+                key={m.key}
+                className={`tab ${metric === m.key ? "active" : ""}`}
+                onClick={() => setMetric(m.key)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="spacer" style={{ flex: 1 }} />
+          <div className="toggle-group">
+            <button className={view === "table" ? "active" : ""} onClick={() => setView("table")}>Table</button>
+            <button className={view === "line" ? "active" : ""} onClick={() => setView("line")}>Line</button>
+            <button className={view === "bump" ? "active" : ""} onClick={() => setView("bump")}>Bump (position)</button>
+          </div>
+        </div>
+      </div>
+
+      {view === "table" && (
+        <div className="card" style={{ overflowX: "auto" }}>
+          <table className="stat-table progression-table">
+            <thead>
+              <tr>
+                <th className="col-team">Team</th>
+                {prog.gameweeks.map((gw) => <th key={gw}>GW{gw}</th>)}
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedSeries.map((s) => (
+                <tr key={s.team}>
+                  <td className="col-team">{s.team}</td>
+                  {s.values.map((v, i) => (
+                    <td key={i}>{v === null ? "" : fmtVal(v, metric)}</td>
+                  ))}
+                  <td><b>{fmtVal(s.values.at(-1) ?? 0, metric)}</b></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === "line" && (
+        <div className="card">
+          <div className="chart-wrap" style={{ height: 520 }}>
+            <ResponsiveContainer>
+              <LineChart data={lineData}>
+                <CartesianGrid stroke="#2a3644" />
+                <XAxis dataKey="gameweek" stroke="#8ea0b2" />
+                <YAxis stroke="#8ea0b2" />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {prog.series.map((s, i) => (
+                  <Line
+                    key={s.team}
+                    dataKey={s.team}
+                    stroke={TEAM_COLORS[i % TEAM_COLORS.length]}
+                    dot={false}
+                    strokeWidth={1.5}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="subtle">Click legend entries to toggle teams.</div>
+        </div>
+      )}
+
+      {view === "bump" && bump && bumpData && (
+        <div className="card">
+          <h2 className="card-title">League position by gameweek</h2>
+          <div className="chart-wrap" style={{ height: 520 }}>
+            <ResponsiveContainer>
+              <LineChart data={bumpData}>
+                <CartesianGrid stroke="#2a3644" />
+                <XAxis dataKey="gameweek" stroke="#8ea0b2" />
+                <YAxis stroke="#8ea0b2" reversed domain={[1, bump.series.length]} ticks={Array.from({ length: bump.series.length }, (_, i) => i + 1)} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {bump.series.map((s, i) => (
+                  <Line
+                    key={s.team}
+                    dataKey={s.team}
+                    stroke={TEAM_COLORS[i % TEAM_COLORS.length]}
+                    dot={false}
+                    strokeWidth={1.5}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fmtVal(v: number, metric: ProgressionMetric): string {
+  if (metric === "xG" || metric === "xGA") return v.toFixed(1);
+  return String(Math.round(v));
+}
+
+const TEAM_COLORS = [
+  "#4db3ff", "#7cd992", "#f5a623", "#e05252", "#b278f0", "#4ad0ce", "#e0c34a", "#ff8fa3",
+  "#5a6bff", "#73c2fb", "#a2d86e", "#ff7f50", "#c06bff", "#40e0d0", "#ff6384", "#ffb347",
+  "#5dd39e", "#ff7fa9", "#3bb273", "#ffc857",
+];
