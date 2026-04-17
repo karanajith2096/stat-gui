@@ -411,7 +411,9 @@ export function buildSetPieceBreakdown(
     bySubType[sub] = (bySubType[sub] ?? 0) + 1;
     if (g.MatchGoalNo === 1) matchOpeners++;
     if (g.TeamGoalNo === 1) teamOpeners++;
-    if (g.HomeAway === "H") home++;
+    // For OGs the benefiting team is the opponent, so H/A is flipped.
+    const isHomeGoal = g.GoalOG === "OG" ? g.HomeAway === "A" : g.HomeAway === "H";
+    if (isHomeGoal) home++;
     else away++;
     if (g.GoalTime <= 45) firstHalf++;
     else secondHalf++;
