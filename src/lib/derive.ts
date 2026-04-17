@@ -379,12 +379,10 @@ export function buildTeamForm(team: string, matches: Match[], goals: Goal[]): Fo
 }
 
 // --- Set piece breakdown ---
-const SET_PIECE_VALUES = new Set(
-  ["Corner", "Free Kick", "FreeKick", "Free-kick", "Throw-in", "Throw In", "ThrowIn", "Set Piece", "SetPiece", "Header from Set Piece"].map((s) => s.toLowerCase())
-);
+const NON_SET_PIECE_VALUES = new Set(["regular", "fastbreak", "fast break", "fast-break", "penalty"]);
 
 export const isSetPieceSituation = (situation: string) =>
-  SET_PIECE_VALUES.has(situation.trim().toLowerCase());
+  !NON_SET_PIECE_VALUES.has(situation.trim().toLowerCase());
 
 export function buildSetPieceBreakdown(
   team: string,
