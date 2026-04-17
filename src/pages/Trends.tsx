@@ -41,7 +41,6 @@ export function Trends() {
     matches.forEach((m) => matchGW.set(m.MatchNo, m.Gameweek));
     const allSituations = new Set<string>();
     for (const g of goals) {
-      if (g.GoalOG !== "G") continue;
       const gw = matchGW.get(g.MatchNo);
       if (!gw) continue;
       if (!byGW.has(gw)) byGW.set(gw, new Map());
