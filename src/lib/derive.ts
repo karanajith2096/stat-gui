@@ -180,6 +180,10 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
         goalsWhenTrailing: 0,
         homeGoals: 0,
         awayGoals: 0,
+        firstHalfGoals: 0,
+        firstHalfETGoals: 0,
+        secondHalfGoals: 0,
+        secondHalfETGoals: 0,
         matchOpeners: 0,
         teamOpeners: 0,
         goalLog: [],
@@ -193,6 +197,13 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
     if (/^Penalty$/i.test(g.Situation)) row.penalties++;
     if (g.HomeAway === "H") row.homeGoals++;
     else row.awayGoals++;
+    if (g.GoalTime <= 45) {
+      row.firstHalfGoals++;
+      if (g.GoalTime === 45 && g.AddedTime != null && g.AddedTime > 0) row.firstHalfETGoals++;
+    } else {
+      row.secondHalfGoals++;
+      if (g.GoalTime === 90 && g.AddedTime != null && g.AddedTime > 0) row.secondHalfETGoals++;
+    }
 
     const ctx = ctxByGoalKey.get(`${g.MatchNo}:${g.MatchGoalNo}`);
     if (ctx) {
@@ -246,6 +257,10 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
         goalsWhenTrailing: 0,
         homeGoals: 0,
         awayGoals: 0,
+        firstHalfGoals: 0,
+        firstHalfETGoals: 0,
+        secondHalfGoals: 0,
+        secondHalfETGoals: 0,
         matchOpeners: 0,
         teamOpeners: 0,
         goalLog: [],
@@ -375,6 +390,8 @@ export function buildTeamForm(team: string, matches: Match[], goals: Goal[]): Fo
       possession: isHome ? m.HomePossession : m.AwayPossession,
       shots: isHome ? m.HomeShots : m.AwayShots,
       shotsOnTarget: isHome ? m.HomeSot : m.AwaySot,
+      matchGoals: gf,
+      matchGoalsAgainst: ga,
     });
   }
   return fps;
@@ -404,7 +421,8 @@ export function buildSetPieceBreakdown(
   const totalGoalsAll = allGoals.length;
   const setPieceGoals = allGoals.filter((g) => isSetPieceSituation(g.Situation));
   const bySubType: Record<string, number> = {};
-  let matchOpeners = 0, teamOpeners = 0, home = 0, away = 0, firstHalf = 0, secondHalf = 0;
+  let matchOpeners = 0, teamOpeners = 0, home = 0, away = 0;
+  let firstHalf = 0, firstHalfET = 0, secondHalf = 0, secondHalfET = 0;
 
   for (const g of setPieceGoals) {
     const sub = g.Situation || "Set Piece";
@@ -415,8 +433,13 @@ export function buildSetPieceBreakdown(
     const isHomeGoal = g.GoalOG === "OG" ? g.HomeAway === "A" : g.HomeAway === "H";
     if (isHomeGoal) home++;
     else away++;
-    if (g.GoalTime <= 45) firstHalf++;
-    else secondHalf++;
+    if (g.GoalTime <= 45) {
+      firstHalf++;
+      if (g.GoalTime === 45 && g.AddedTime != null && g.AddedTime > 0) firstHalfET++;
+    } else {
+      secondHalf++;
+      if (g.GoalTime === 90 && g.AddedTime != null && g.AddedTime > 0) secondHalfET++;
+    }
   }
 
   return {
@@ -428,7 +451,9 @@ export function buildSetPieceBreakdown(
     home,
     away,
     firstHalf,
+    firstHalfET,
     secondHalf,
+    secondHalfET,
   };
 }
 

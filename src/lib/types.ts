@@ -127,6 +127,10 @@ export interface ScorerRow {
   goalsWhenTrailing: number;
   homeGoals: number;
   awayGoals: number;
+  firstHalfGoals: number;
+  firstHalfETGoals: number;
+  secondHalfGoals: number;
+  secondHalfETGoals: number;
   matchOpeners: number;
   teamOpeners: number;
   goalLog: GoalLogEntry[];
@@ -207,6 +211,8 @@ export interface FormPoint {
   possession: number;
   shots: number;
   shotsOnTarget: number;
+  matchGoals: number;
+  matchGoalsAgainst: number;
 }
 
 export interface SetPieceBreakdown {
@@ -218,7 +224,9 @@ export interface SetPieceBreakdown {
   home: number;
   away: number;
   firstHalf: number;
+  firstHalfET: number;
   secondHalf: number;
+  secondHalfET: number;
 }
 
 export interface Prediction {
@@ -232,6 +240,21 @@ export interface Prediction {
   pBTTS: number;
   pOver25: number;
   topScorelines: { score: [number, number]; p: number }[];
+  scorelineGrid?: { score: [number, number]; p: number }[];
   supportsScoreline: boolean;
   modelName: string;
+}
+
+export interface PredictionHistoryEntry {
+  id: string;
+  timestamp: number;
+  home: string;
+  away: string;
+  predictions: {
+    modelName: string;
+    pHome: number;
+    pDraw: number;
+    pAway: number;
+    topScoreline: [number, number] | null;
+  }[];
 }
