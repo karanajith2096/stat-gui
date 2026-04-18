@@ -4,80 +4,91 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Label,
-  ReferenceLine,
+  Legend,
   ResponsiveContainer,
-  Sankey,
-  Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { buildScorerLeaderboard } from "../lib/derive";
+import { buildScorerLeaderboard, getTeams } from "../lib/derive";
 import { useWorkbook } from "../store/workbook";
 import { SortableTable, type Column } from "../components/SortableTable";
-import type { ScorerRow } from "../lib/types";
+import type { Goal, Match, ScorerRow } from "../lib/types";
 
-type Tab = "goals" | "assists" | "ga" | "share";
+const SITUATION_COLORS: Record<string, string> = {
+  Regular: "#4db3ff",
+  Corner: "#7cd992",
+  "Free Kick": "#f5a623",
+  Penalty: "#e05252",
+  "Other Set-Piece Goals": "#b07fff",
+};
+
+function situationBucket(sit: string): string {
+  const s = sit.trim();
+  if (s === "Regular") return "Regular";
+  if (s === "Corner") return "Corner";
+  if (/free.?kick/i.test(s)) return "Free Kick";
+  if (/penalty/i.test(s)) return "Penalty";
+  return "Other Set-Piece Goals";
+}
+
+const MINUTE_BUCKETS = ["0–15", "15–30", "30–45", "45–60", "60–75", "75–90", "90+"];
+function minuteBucket(t: number): string {
+  if (t <= 15) return "0–15";
+  if (t <= 30) return "15–30";
+  if (t <= 45) return "30–45";
+  if (t <= 60) return "45–60";
+  if (t <= 75) return "60–75";
+  if (t <= 90) return "75–90";
+  return "90+";
+}
 
 export function Scorers() {
   const matches = useWorkbook((s) => s.matches);
   const goals = useWorkbook((s) => s.goals);
   const scorers = useMemo(() => buildScorerLeaderboard(goals, matches), [goals, matches]);
-  const [tab, setTab] = useState<Tab>("goals");
-  const [teamFilter, setTeamFilter] = useState<string>("");
-  const [posFilter, setPosFilter] = useState<string>("");
-  const [natFilter, setNatFilter] = useState<string>("");
+
+  const [teamFilter, setTeamFilter] = useState("");
+  const [posFilter, setPosFilter] = useState("");
+  const [natFilter, setNatFilter] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [drawerPlayer, setDrawerPlayer] = useState<ScorerRow | null>(null);
+  const [histPlayer, setHistPlayer] = useState("");
+  const [histTeam, setHistTeam] = useState("");
 
   const teams = useMemo(() => Array.from(new Set(scorers.map((s) => s.team))).sort(), [scorers]);
   const positions = useMemo(() => Array.from(new Set(scorers.map((s) => s.position).filter(Boolean))).sort(), [scorers]);
   const nats = useMemo(() => Array.from(new Set(scorers.map((s) => s.nationality).filter(Boolean))).sort(), [scorers]);
 
-  const filtered = useMemo(() => {
-    return scorers
+  const filtered = useMemo(() =>
+    scorers
+      .filter((s) => s.goals > 0)
       .filter((s) => !teamFilter || s.team === teamFilter)
       .filter((s) => !posFilter || s.position === posFilter)
-      .filter((s) => !natFilter || s.nationality === natFilter)
-      .filter((s) => {
-        if (tab === "goals") return s.goals > 0;
-        if (tab === "assists") return s.assists > 0;
-        if (tab === "ga") return s.goals + s.assists > 0;
-        if (tab === "share") return s.goals > 0;
-        return true;
-      });
-  }, [scorers, teamFilter, posFilter, natFilter, tab]);
+      .filter((s) => !natFilter || s.nationality === natFilter),
+    [scorers, teamFilter, posFilter, natFilter]
+  );
+
+  const displayed = showAll ? filtered : filtered.slice(0, 10);
 
   const columns: Column<ScorerRow>[] = useMemo(() => [
     { key: "player", header: "Player", value: (r) => r.player, align: "left" },
     { key: "team", header: "Team", value: (r) => r.team, align: "left" },
     { key: "goals", header: "Goals", value: (r) => r.goals, initialSort: "desc", render: (r) => <b>{r.goals}</b> },
     { key: "assists", header: "Assists", value: (r) => r.assists },
-    { key: "ga", header: "G+A", value: (r) => r.goals + r.assists },
-    { key: "xG", header: "xG", value: (r) => r.xG, render: (r) => r.xG.toFixed(2) },
-    { key: "xGOTminusxG", header: "xGOT−xG", value: (r) => r.xGOTminusxG, render: (r) => (r.xGOTminusxG > 0 ? "+" : "") + r.xGOTminusxG.toFixed(2) },
     { key: "teamGoalShare", header: "Team %", value: (r) => r.teamGoalShare, render: (r) => (r.teamGoalShare * 100).toFixed(1) + "%" },
     { key: "penalties", header: "Pens", value: (r) => r.penalties },
+    { key: "homeGoals", header: "Home", value: (r) => r.homeGoals },
+    { key: "awayGoals", header: "Away", value: (r) => r.awayGoals },
+    { key: "firstHalfGoals", header: "1st Half", value: (r) => r.firstHalfGoals },
+    { key: "secondHalfGoals", header: "2nd Half", value: (r) => r.secondHalfGoals },
   ], []);
-
-  const defaultSort =
-    tab === "assists" ? { key: "assists", dir: "desc" as const } :
-    tab === "ga" ? { key: "ga", dir: "desc" as const } :
-    tab === "share" ? { key: "teamGoalShare", dir: "desc" as const } :
-    { key: "goals", dir: "desc" as const };
 
   return (
     <div>
       <div className="card">
         <h2 className="card-title">Scorer Leaderboards</h2>
-        <div className="tabs">
-          <button className={`tab ${tab === "goals" ? "active" : ""}`} onClick={() => setTab("goals")}>Goals</button>
-          <button className={`tab ${tab === "assists" ? "active" : ""}`} onClick={() => setTab("assists")}>Assists</button>
-          <button className={`tab ${tab === "ga" ? "active" : ""}`} onClick={() => setTab("ga")}>G + A</button>
-          <button className={`tab ${tab === "share" ? "active" : ""}`} onClick={() => setTab("share")}>Team Goal Share</button>
-        </div>
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}>
             <option value="">All teams</option>
             {teams.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -92,93 +103,68 @@ export function Scorers() {
           </select>
         </div>
         <SortableTable
-          rows={filtered}
+          rows={displayed}
           columns={columns}
-          defaultSort={defaultSort}
+          defaultSort={{ key: "goals", dir: "desc" }}
           getRowKey={(r) => `${r.player}__${r.team}`}
           onRowClick={(r) => setDrawerPlayer(r)}
         />
+        <div style={{ marginTop: 10, textAlign: "center" }}>
+          <button className="tab" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? `Show top 10 (${filtered.length} total)` : `Show all ${filtered.length} scorers`}
+          </button>
+        </div>
       </div>
 
-      <XGVsGoalsScatter scorers={scorers} />
-      <XGOTBarChart scorers={scorers} />
-      <AssistScorerSankey scorers={scorers} />
+      <SituationBreakdown scorers={filtered.slice(0, 10)} />
+      <ConsistencyHeatmap scorers={filtered.slice(0, 10)} />
+      <HomeAwayBar scorers={filtered.slice(0, 10)} />
+      <HalfBar scorers={filtered.slice(0, 10)} />
+      <GoalMinuteHistogram
+        goals={goals}
+        players={scorers.map((s) => s.player)}
+        teams={getTeams(matches)}
+        selectedPlayer={histPlayer}
+        selectedTeam={histTeam}
+        onPlayerChange={setHistPlayer}
+        onTeamChange={setHistTeam}
+      />
 
       {drawerPlayer && <PlayerDrawer player={drawerPlayer} onClose={() => setDrawerPlayer(null)} />}
     </div>
   );
 }
 
-function XGVsGoalsScatter({ scorers }: { scorers: ScorerRow[] }) {
-  const data = scorers
-    .filter((s) => s.goals >= 3)
-    .map((s) => ({ player: s.player, team: s.team, xG: s.xG, goals: s.goals }));
-  const max = Math.max(...data.map((d) => Math.max(d.goals, d.xG)), 5) + 1;
-  return (
-    <div className="card">
-      <h2 className="card-title">xG vs Goals (players with ≥ 3 goals)</h2>
-      <div className="chart-wrap">
-        <ResponsiveContainer>
-          <ScatterChart margin={{ top: 10, right: 30, bottom: 40, left: 40 }}>
-            <CartesianGrid stroke="#2a3644" />
-            <XAxis type="number" dataKey="xG" domain={[0, max]} stroke="#8ea0b2">
-              <Label value="xG" position="insideBottom" offset={-20} fill="#8ea0b2" />
-            </XAxis>
-            <YAxis type="number" dataKey="goals" domain={[0, max]} stroke="#8ea0b2">
-              <Label value="Goals" angle={-90} position="insideLeft" fill="#8ea0b2" />
-            </YAxis>
-            <ReferenceLine segment={[{ x: 0, y: 0 }, { x: max, y: max }]} stroke="#6b7785" strokeDasharray="4 4" />
-            <Tooltip
-              content={({ active, payload }) => {
-                if (!active || !payload || payload.length === 0) return null;
-                const d = payload[0].payload;
-                return (
-                  <div style={{ background: "#1c2530", border: "1px solid #2a3644", padding: 8, fontSize: 12 }}>
-                    <b>{d.player}</b> ({d.team})<br />
-                    Goals: {d.goals} / xG {d.xG.toFixed(2)}<br />
-                    Diff: {(d.goals - d.xG).toFixed(2)}
-                  </div>
-                );
-              }}
-            />
-            <Scatter data={data} fill="#4db3ff" />
-          </ScatterChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
+function SituationBreakdown({ scorers }: { scorers: ScorerRow[] }) {
+  const goals = useWorkbook((s) => s.goals);
+  const data = useMemo(() => {
+    return scorers.map((s) => {
+      const playerGoals = goals.filter((g) => g.Scorer === s.player && g.Team === s.team && g.GoalOG === "G");
+      const row: Record<string, unknown> = { player: s.player };
+      for (const g of playerGoals) {
+        const b = situationBucket(g.Situation);
+        row[b] = ((row[b] as number) ?? 0) + 1;
+      }
+      return row;
+    });
+  }, [scorers, goals]);
 
-function XGOTBarChart({ scorers }: { scorers: ScorerRow[] }) {
-  const top = [...scorers].filter((s) => s.goals >= 3).sort((a, b) => b.xGOTminusxG - a.xGOTminusxG).slice(0, 10);
-  const bottom = [...scorers].filter((s) => s.goals >= 3).sort((a, b) => a.xGOTminusxG - b.xGOTminusxG).slice(0, 10).reverse();
-  const data = [...bottom, ...top].map((s) => ({ player: `${s.player}`, val: s.xGOTminusxG, team: s.team }));
+  const buckets = Object.keys(SITUATION_COLORS);
+
   return (
     <div className="card">
-      <h2 className="card-title">Shot quality after contact (xGOT − xG)</h2>
+      <h2 className="card-title">Goal breakdown by situation (top 10)</h2>
       <div className="chart-wrap">
         <ResponsiveContainer>
-          <BarChart data={data} layout="vertical" margin={{ top: 10, right: 30, bottom: 10, left: 120 }}>
-            <CartesianGrid stroke="#2a3644" horizontal={false} />
-            <XAxis type="number" stroke="#8ea0b2" />
-            <YAxis type="category" dataKey="player" stroke="#8ea0b2" width={110} tick={{ fontSize: 11 }} />
-            <Tooltip
-              content={({ active, payload }) => {
-                if (!active || !payload || payload.length === 0) return null;
-                const d = payload[0].payload;
-                return (
-                  <div style={{ background: "#1c2530", border: "1px solid #2a3644", padding: 8, fontSize: 12 }}>
-                    <b>{d.player}</b> ({d.team})<br />
-                    xGOT − xG: {d.val.toFixed(2)}
-                  </div>
-                );
-              }}
-            />
-            <Bar dataKey="val">
-              {data.map((d, i) => (
-                <Cell key={i} fill={d.val >= 0 ? "#7cd992" : "#e05252"} />
-              ))}
-            </Bar>
+          <BarChart data={data} margin={{ top: 10, right: 20, bottom: 60, left: 10 }}>
+            <CartesianGrid stroke="#2a3644" />
+            <XAxis dataKey="player" stroke="#8ea0b2" angle={-35} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
+            <YAxis stroke="#8ea0b2" allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            {buckets.map((b) => (
+              <Bar key={b} dataKey={b} stackId="a" fill={SITUATION_COLORS[b]} />
+            ))}
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -186,66 +172,150 @@ function XGOTBarChart({ scorers }: { scorers: ScorerRow[] }) {
   );
 }
 
-function AssistScorerSankey({ scorers }: { scorers: ScorerRow[] }) {
-  const matches = useWorkbook((s) => s.matches);
-  const goalsData = useWorkbook((s) => s.goals);
-  void matches;
+function ConsistencyHeatmap({ scorers }: { scorers: ScorerRow[]; matches?: Match[] }) {
+  const maxGW = useMemo(() =>
+    Math.max(0, ...scorers.flatMap((s) => s.goalLog.map((g) => g.gameweek))),
+    [scorers]
+  );
+  const gws = useMemo(() => Array.from({ length: maxGW }, (_, i) => i + 1), [maxGW]);
 
-  const pairs = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const g of goalsData) {
-      if (g.GoalOG !== "G" || !g.Assist) continue;
-      const key = `${g.Assist}|||${g.Scorer}`;
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-    return Array.from(map.entries())
-      .map(([k, v]) => {
-        const [assist, scorer] = k.split("|||");
-        return { assist, scorer, value: v };
-      })
-      .filter((p) => p.value >= 2)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 30);
-  }, [goalsData]);
+  const grid = useMemo(() =>
+    scorers.map((s) => {
+      const byGW = new Map<number, number>();
+      for (const g of s.goalLog) byGW.set(g.gameweek, (byGW.get(g.gameweek) ?? 0) + 1);
+      return { player: s.player, byGW };
+    }),
+    [scorers]
+  );
 
-  const { nodes, links } = useMemo(() => {
-    const assists = Array.from(new Set(pairs.map((p) => p.assist)));
-    const scorersList = Array.from(new Set(pairs.map((p) => p.scorer)));
-    const nodes = [
-      ...assists.map((a) => ({ name: `${a} (A)` })),
-      ...scorersList.map((s) => ({ name: `${s} (G)` })),
-    ];
-    const aIdx = new Map(assists.map((a, i) => [a, i]));
-    const sIdx = new Map(scorersList.map((s, i) => [s, assists.length + i]));
-    const links = pairs.map((p) => ({
-      source: aIdx.get(p.assist)!,
-      target: sIdx.get(p.scorer)!,
-      value: p.value,
-    }));
-    return { nodes, links };
-  }, [pairs]);
-
-  if (nodes.length === 0) return null;
+  if (gws.length === 0) return null;
 
   return (
     <div className="card">
-      <h2 className="card-title">Assist → Scorer partnerships (top pairs with ≥ 2 goals)</h2>
-      <div style={{ width: "100%", height: Math.max(300, nodes.length * 14) }}>
+      <h2 className="card-title">Scoring consistency (top 10 — by gameweek)</h2>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: "4px 8px", color: "#8ea0b2", position: "sticky", left: 0, background: "#151e28" }}>Player</th>
+              {gws.map((gw) => (
+                <th key={gw} style={{ padding: "4px 6px", color: "#8ea0b2", minWidth: 28, textAlign: "center" }}>GW{gw}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {grid.map(({ player, byGW }) => (
+              <tr key={player}>
+                <td style={{ padding: "4px 8px", color: "#cdd6e0", whiteSpace: "nowrap", position: "sticky", left: 0, background: "#151e28" }}>{player}</td>
+                {gws.map((gw) => {
+                  const n = byGW.get(gw) ?? 0;
+                  const bg = n === 0 ? "#1c2530" : n === 1 ? "#1a5276" : n === 2 ? "#2471a3" : "#4db3ff";
+                  return (
+                    <td key={gw} style={{ background: bg, padding: "4px 6px", textAlign: "center", color: n > 0 ? "#fff" : "transparent", border: "1px solid #151e28" }}>
+                      {n > 0 ? n : "·"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function HomeAwayBar({ scorers }: { scorers: ScorerRow[] }) {
+  const data = scorers.map((s) => ({ player: s.player, Home: s.homeGoals, Away: s.awayGoals }));
+  return (
+    <div className="card">
+      <h2 className="card-title">Home vs Away goals (top 10)</h2>
+      <div className="chart-wrap">
         <ResponsiveContainer>
-          <Sankey
-            data={{ nodes, links }}
-            nodeWidth={12}
-            nodePadding={6}
-            link={{ stroke: "#4db3ff", strokeOpacity: 0.35 }}
-            node={{ stroke: "#4db3ff", fill: "#1c2530" }}
-            margin={{ top: 10, right: 160, bottom: 10, left: 160 }}
-          >
+          <BarChart data={data} margin={{ top: 10, right: 20, bottom: 60, left: 10 }}>
+            <CartesianGrid stroke="#2a3644" />
+            <XAxis dataKey="player" stroke="#8ea0b2" angle={-35} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
+            <YAxis stroke="#8ea0b2" allowDecimals={false} />
             <Tooltip />
-          </Sankey>
+            <Legend />
+            <Bar dataKey="Home" fill="#4db3ff" />
+            <Bar dataKey="Away" fill="#7cd992" />
+          </BarChart>
         </ResponsiveContainer>
       </div>
-      {/* unused hint to avoid "scorers" lint-only-imports */}
-      <span style={{ display: "none" }}>{scorers.length}</span>
+    </div>
+  );
+}
+
+function HalfBar({ scorers }: { scorers: ScorerRow[] }) {
+  const data = scorers.map((s) => ({ player: s.player, "1st Half": s.firstHalfGoals, "2nd Half": s.secondHalfGoals }));
+  return (
+    <div className="card">
+      <h2 className="card-title">First half vs Second half goals (top 10)</h2>
+      <div className="chart-wrap">
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 10, right: 20, bottom: 60, left: 10 }}>
+            <CartesianGrid stroke="#2a3644" />
+            <XAxis dataKey="player" stroke="#8ea0b2" angle={-35} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
+            <YAxis stroke="#8ea0b2" allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="1st Half" fill="#4db3ff" />
+            <Bar dataKey="2nd Half" fill="#f5a623" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function GoalMinuteHistogram({ goals, players, teams, selectedPlayer, selectedTeam, onPlayerChange, onTeamChange }: {
+  goals: Goal[];
+  players: string[];
+  teams: string[];
+  selectedPlayer: string;
+  selectedTeam: string;
+  onPlayerChange: (v: string) => void;
+  onTeamChange: (v: string) => void;
+}) {
+  const data = useMemo(() => {
+    const filtered = goals.filter((g) => {
+      if (g.GoalOG !== "G") return false;
+      if (selectedPlayer && g.Scorer !== selectedPlayer) return false;
+      if (selectedTeam && g.Team !== selectedTeam) return false;
+      return true;
+    });
+    const counts: Record<string, number> = Object.fromEntries(MINUTE_BUCKETS.map((b) => [b, 0]));
+    for (const g of filtered) counts[minuteBucket(g.GoalTime)]++;
+    return MINUTE_BUCKETS.map((b) => ({ minute: b, Goals: counts[b] }));
+  }, [goals, selectedPlayer, selectedTeam]);
+
+  return (
+    <div className="card">
+      <h2 className="card-title">Goal-minute distribution</h2>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <select value={selectedPlayer} onChange={(e) => { onPlayerChange(e.target.value); onTeamChange(""); }}>
+          <option value="">All players</option>
+          {players.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={selectedTeam} onChange={(e) => { onTeamChange(e.target.value); onPlayerChange(""); }}>
+          <option value="">All teams</option>
+          {teams.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+      <div className="chart-wrap">
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+            <CartesianGrid stroke="#2a3644" />
+            <XAxis dataKey="minute" stroke="#8ea0b2" />
+            <YAxis stroke="#8ea0b2" allowDecimals={false} />
+            <Tooltip />
+            <Bar dataKey="Goals" fill="#4db3ff">
+              {data.map((_, i) => <Cell key={i} fill={i < 3 ? "#4db3ff" : i < 6 ? "#7cd992" : "#f5a623"} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -259,7 +329,6 @@ function PlayerDrawer({ player, onClose }: { player: ScorerRow; onClose: () => v
       <div className="stat-grid" style={{ marginTop: 16 }}>
         <Tile label="Goals" value={player.goals} />
         <Tile label="Assists" value={player.assists} />
-        <Tile label="xG" value={player.xG.toFixed(2)} />
         <Tile label="Team %" value={(player.teamGoalShare * 100).toFixed(1) + "%"} />
         <Tile label="Penalties" value={player.penalties} />
         <Tile label="Tie Breakers" value={player.tieBreakers} />
@@ -267,6 +336,8 @@ function PlayerDrawer({ player, onClose }: { player: ScorerRow; onClose: () => v
         <Tile label="When Trailing" value={player.goalsWhenTrailing} />
         <Tile label="Home Goals" value={player.homeGoals} />
         <Tile label="Away Goals" value={player.awayGoals} />
+        <Tile label="1st Half" value={player.firstHalfGoals} />
+        <Tile label="2nd Half" value={player.secondHalfGoals} />
         <Tile label="Match Openers" value={player.matchOpeners} />
         <Tile label="Team Openers" value={player.teamOpeners} />
       </div>

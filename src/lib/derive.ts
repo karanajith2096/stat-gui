@@ -180,6 +180,8 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
         goalsWhenTrailing: 0,
         homeGoals: 0,
         awayGoals: 0,
+        firstHalfGoals: 0,
+        secondHalfGoals: 0,
         matchOpeners: 0,
         teamOpeners: 0,
         goalLog: [],
@@ -193,6 +195,8 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
     if (/^Penalty$/i.test(g.Situation)) row.penalties++;
     if (g.HomeAway === "H") row.homeGoals++;
     else row.awayGoals++;
+    if (g.GoalTime <= 45) row.firstHalfGoals++;
+    else row.secondHalfGoals++;
 
     const ctx = ctxByGoalKey.get(`${g.MatchNo}:${g.MatchGoalNo}`);
     if (ctx) {
@@ -246,6 +250,8 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
         goalsWhenTrailing: 0,
         homeGoals: 0,
         awayGoals: 0,
+        firstHalfGoals: 0,
+        secondHalfGoals: 0,
         matchOpeners: 0,
         teamOpeners: 0,
         goalLog: [],

@@ -127,6 +127,8 @@ export interface ScorerRow {
   goalsWhenTrailing: number;
   homeGoals: number;
   awayGoals: number;
+  firstHalfGoals: number;
+  secondHalfGoals: number;
   matchOpeners: number;
   teamOpeners: number;
   goalLog: GoalLogEntry[];
