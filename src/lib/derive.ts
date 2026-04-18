@@ -96,7 +96,9 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
 
   const teamGoalsTotal = new Map<string, number>();
   for (const g of goals) {
-    if (g.GoalOG === "G") teamGoalsTotal.set(g.Team, (teamGoalsTotal.get(g.Team) ?? 0) + 1);
+    // Own goals benefit the opposing team, so credit them to Against.
+    const creditTo = g.GoalOG === "OG" ? g.Against : g.Team;
+    teamGoalsTotal.set(creditTo, (teamGoalsTotal.get(creditTo) ?? 0) + 1);
   }
 
   // Pre-compute per-match running scores to classify each goal.
@@ -379,12 +381,10 @@ export function buildTeamForm(team: string, matches: Match[], goals: Goal[]): Fo
 }
 
 // --- Set piece breakdown ---
-const SET_PIECE_VALUES = new Set(
-  ["Corner", "Free Kick", "FreeKick", "Free-kick", "Throw-in", "Throw In", "ThrowIn", "Set Piece", "SetPiece", "Header from Set Piece"].map((s) => s.toLowerCase())
-);
+const NON_SET_PIECE_VALUES = new Set(["regular", "fastbreak", "fast break", "fast-break", "penalty"]);
 
 export const isSetPieceSituation = (situation: string) =>
-  SET_PIECE_VALUES.has(situation.trim().toLowerCase());
+  !NON_SET_PIECE_VALUES.has(situation.trim().toLowerCase());
 
 export function buildSetPieceBreakdown(
   team: string,
@@ -394,9 +394,11 @@ export function buildSetPieceBreakdown(
 ): SetPieceBreakdown {
   const matchMap = new Map<number, Match>();
   matches.forEach((m) => matchMap.set(m.MatchNo, m));
+  // OGs benefit the opposing team: a corner OG by Team B counts as a
+  // "corner goal scored" for Team A (Against) and a "corner goal conceded" for Team B (Team).
   const filter = side === "scored"
-    ? (g: Goal) => g.Team === team && g.GoalOG === "G"
-    : (g: Goal) => g.Against === team && g.GoalOG === "G";
+    ? (g: Goal) => (g.Team === team && g.GoalOG === "G") || (g.Against === team && g.GoalOG === "OG")
+    : (g: Goal) => (g.Against === team && g.GoalOG === "G") || (g.Team === team && g.GoalOG === "OG");
 
   const allGoals = goals.filter(filter);
   const totalGoalsAll = allGoals.length;
@@ -409,7 +411,9 @@ export function buildSetPieceBreakdown(
     bySubType[sub] = (bySubType[sub] ?? 0) + 1;
     if (g.MatchGoalNo === 1) matchOpeners++;
     if (g.TeamGoalNo === 1) teamOpeners++;
-    if (g.HomeAway === "H") home++;
+    // For OGs the benefiting team is the opponent, so H/A is flipped.
+    const isHomeGoal = g.GoalOG === "OG" ? g.HomeAway === "A" : g.HomeAway === "H";
+    if (isHomeGoal) home++;
     else away++;
     if (g.GoalTime <= 45) firstHalf++;
     else secondHalf++;
@@ -430,9 +434,9 @@ export function buildSetPieceBreakdown(
 
 // --- Goals by match lookup, used in several charts ---
 export const goalsForTeam = (team: string, goals: Goal[]): Goal[] =>
-  goals.filter((g) => g.Team === team && g.GoalOG === "G");
+  goals.filter((g) => (g.Team === team && g.GoalOG === "G") || (g.Against === team && g.GoalOG === "OG"));
 export const goalsAgainstTeam = (team: string, goals: Goal[]): Goal[] =>
-  goals.filter((g) => g.Against === team && g.GoalOG === "G");
+  goals.filter((g) => (g.Against === team && g.GoalOG === "G") || (g.Team === team && g.GoalOG === "OG"));
 
 // --- Progression: cumulative metric per team across GWs ---
 export type ProgressionMetric = "points" | "goalsScored" | "goalsConceded" | "xG" | "xGA";

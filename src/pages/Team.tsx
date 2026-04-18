@@ -30,6 +30,7 @@ import {
   buildStandings,
   buildTeamForm,
   buildTeamStats,
+  getTeams,
   goalsAgainstTeam,
   goalsForTeam,
   isSetPieceSituation,
@@ -83,7 +84,7 @@ export function Team() {
         <button className={`tab ${tab === "spConceded" ? "active" : ""}`} onClick={() => setTab("spConceded")}>Set Piece — Conceded</button>
       </div>
 
-      {tab === "overview" && <Overview team={team} stats={stats} leagueAvg={leagueAvg} goals={goals} />}
+      {tab === "overview" && <Overview team={team} stats={stats} leagueAvg={leagueAvg} goals={goals} matches={matches} />}
       {tab === "form" && <FormTab form={form} />}
       {tab === "matches" && <MatchesTab team={team} matches={teamMatches} />}
       {tab === "goals" && <GoalsTab team={team} goals={goals} />}
@@ -108,24 +109,61 @@ function perGame(side: TeamSideStats, key: keyof TeamSideStats): number {
   return g > 0 ? (side[key] as number) / g : 0;
 }
 
-function Overview({ team, stats, leagueAvg, goals }: {
+function Overview({ team, stats, leagueAvg, goals, matches }: {
   team: string;
   stats: ReturnType<typeof buildTeamStats>;
   leagueAvg: TeamSideStats;
   goals: Goal[];
+  matches: Match[];
 }) {
   const t = stats.total;
   const g = stats.games;
 
-  const radarData = [
-    { axis: "xG", team: perGame(t, "xG"), league: leagueAvg.xG },
-    { axis: "xGA (inv)", team: Math.max(0.01, 3 - perGame(t, "xGA")), league: Math.max(0.01, 3 - leagueAvg.xGA) },
-    { axis: "Possession", team: perGame(t, "possession"), league: leagueAvg.possession },
-    { axis: "Shots", team: perGame(t, "shots"), league: leagueAvg.shots },
-    { axis: "Big Chances", team: perGame(t, "bigChances"), league: leagueAvg.bigChances },
-    { axis: "Set Piece xG", team: perGame(t, "setPiecexG"), league: leagueAvg.setPiecexG },
-    { axis: "Fouls (inv)", team: Math.max(0.1, 20 - perGame(t, "fouls")), league: Math.max(0.1, 20 - leagueAvg.fouls) },
-  ];
+  // Normalize radar axes across all teams so no single metric dominates by scale.
+  // Each axis is min-max normalized to 0–100. Inverted axes (lower = better) are
+  // flipped so a higher bar always means "better for this team".
+  const radarData = useMemo(() => {
+    const allTeams = getTeams(matches);
+    const allStats = new Map(allTeams.map((tn) => [tn, buildTeamStats(tn, matches)]));
+
+    function pg(tn: string, key: keyof TeamSideStats): number {
+      const ts = allStats.get(tn);
+      if (!ts || ts.games === 0) return 0;
+      return (ts.total[key] as number) / ts.games;
+    }
+
+    type AxisDef = { axis: string; key: keyof TeamSideStats; invert: boolean };
+    const axes: AxisDef[] = [
+      { axis: "xG",           key: "xG",           invert: false },
+      { axis: "xGA (inv)",    key: "xGA",           invert: true  },
+      { axis: "Possession",   key: "possession",    invert: false },
+      { axis: "Shots",        key: "shots",         invert: false },
+      { axis: "Big Chances",  key: "bigChances",    invert: false },
+      { axis: "Set Piece xG", key: "setPiecexG",    invert: false },
+      { axis: "1st Half xG",  key: "firstHalfxG",   invert: false },
+    ];
+
+    return axes.map(({ axis, key, invert }) => {
+      const vals = allTeams.map((tn) => pg(tn, key));
+      const min = Math.min(...vals);
+      const max = Math.max(...vals);
+      const range = max - min || 1;
+
+      const normalize = (v: number) =>
+        invert ? ((max - v) / range) * 100 : ((v - min) / range) * 100;
+
+      const teamRaw = pg(team, key);
+      const leagueRaw = leagueAvg[key] as number;
+
+      return {
+        axis,
+        team: parseFloat(normalize(teamRaw).toFixed(1)),
+        league: parseFloat(normalize(leagueRaw).toFixed(1)),
+        rawTeam: teamRaw.toFixed(2),
+        rawLeague: leagueRaw.toFixed(2),
+      };
+    });
+  }, [team, matches, leagueAvg]);
 
   const haData = [
     { label: "PPG", home: perGame(stats.home, "points"), away: perGame(stats.away, "points") },
@@ -168,11 +206,16 @@ function Overview({ team, stats, leagueAvg, goals }: {
             <RadarChart data={radarData}>
               <PolarGrid stroke="#2a3644" />
               <PolarAngleAxis dataKey="axis" stroke="#8ea0b2" />
-              <PolarRadiusAxis stroke="#2a3644" />
+              <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} stroke="#2a3644" />
               <Radar name={team} dataKey="team" stroke="#4db3ff" fill="#4db3ff" fillOpacity={0.4} />
               <Radar name="League avg" dataKey="league" stroke="#8ea0b2" fill="#8ea0b2" fillOpacity={0.15} />
               <Legend />
-              <Tooltip />
+              <Tooltip
+                formatter={(value: number, name: string, props) => {
+                  const raw = name === team ? props.payload.rawTeam : props.payload.rawLeague;
+                  return [`${value.toFixed(0)}/100 (actual: ${raw})`, name];
+                }}
+              />
             </RadarChart>
           </ResponsiveContainer>
         </div>

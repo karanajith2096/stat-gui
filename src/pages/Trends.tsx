@@ -28,19 +28,26 @@ export function Trends() {
   const scoredFirst = useMemo(() => buildScoredFirstWinRate(matches, goals), [matches, goals]);
 
   const goalMix = useMemo(() => {
-    // Per GW: share of goals by Situation
+    const NAMED = new Set(["Regular", "FastBreak", "Fast Break", "Fast-Break", "Penalty", "Corner"]);
+    const OTHER_KEY = "Other Set-Piece Goals";
+
+    const classifySituation = (situation: string): string => {
+      const s = situation.trim();
+      return NAMED.has(s) ? s : OTHER_KEY;
+    };
+
     const byGW = new Map<number, Map<string, number>>();
     const matchGW = new Map<number, number>();
     matches.forEach((m) => matchGW.set(m.MatchNo, m.Gameweek));
     const allSituations = new Set<string>();
     for (const g of goals) {
-      if (g.GoalOG !== "G") continue;
       const gw = matchGW.get(g.MatchNo);
       if (!gw) continue;
       if (!byGW.has(gw)) byGW.set(gw, new Map());
       const m = byGW.get(gw)!;
-      m.set(g.Situation, (m.get(g.Situation) ?? 0) + 1);
-      allSituations.add(g.Situation);
+      const bucket = classifySituation(g.Situation);
+      m.set(bucket, (m.get(bucket) ?? 0) + 1);
+      allSituations.add(bucket);
     }
     const sorted = Array.from(byGW.keys()).sort((a, b) => a - b);
     const sitList = Array.from(allSituations);
