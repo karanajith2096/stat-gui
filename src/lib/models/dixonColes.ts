@@ -123,6 +123,7 @@ export function dixonColesPredict(fit: FitResult, matches: Match[], home: string
     pHome: pH, pDraw: pD, pAway: pA,
     pBTTS, pOver25,
     topScorelines: cells.slice(0, 5),
+    scorelineGrid: cells.filter((c) => c.score[0] <= 5 && c.score[1] <= 5),
     supportsScoreline: true,
     modelName: "Dixon–Coles",
   };

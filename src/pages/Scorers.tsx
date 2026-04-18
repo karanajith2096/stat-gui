@@ -248,7 +248,13 @@ function HomeAwayBar({ scorers }: { scorers: ScorerRow[] }) {
 }
 
 function HalfBar({ scorers }: { scorers: ScorerRow[] }) {
-  const data = scorers.map((s) => ({ player: s.player, "1st Half": s.firstHalfGoals, "2nd Half": s.secondHalfGoals }));
+  const data = scorers.map((s) => ({
+    player: s.player,
+    "1st Half": s.firstHalfGoals - s.firstHalfETGoals,
+    "1st Half ET": s.firstHalfETGoals,
+    "2nd Half": s.secondHalfGoals - s.secondHalfETGoals,
+    "2nd Half ET": s.secondHalfETGoals,
+  }));
   return (
     <div className="card">
       <h2 className="card-title">First half vs Second half goals (top 10)</h2>
@@ -260,8 +266,10 @@ function HalfBar({ scorers }: { scorers: ScorerRow[] }) {
             <YAxis stroke="#8ea0b2" allowDecimals={false} />
             <Tooltip />
             <Legend />
-            <Bar dataKey="1st Half" fill="#4db3ff" />
-            <Bar dataKey="2nd Half" fill="#f5a623" />
+            <Bar dataKey="1st Half" stackId="first" fill="#4db3ff" />
+            <Bar dataKey="1st Half ET" stackId="first" fill="#1a5e8a" />
+            <Bar dataKey="2nd Half" stackId="second" fill="#f5a623" />
+            <Bar dataKey="2nd Half ET" stackId="second" fill="#a0620a" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -337,7 +345,9 @@ function PlayerDrawer({ player, onClose }: { player: ScorerRow; onClose: () => v
         <Tile label="Home Goals" value={player.homeGoals} />
         <Tile label="Away Goals" value={player.awayGoals} />
         <Tile label="1st Half" value={player.firstHalfGoals} />
+        <Tile label="1st Half ET" value={player.firstHalfETGoals} />
         <Tile label="2nd Half" value={player.secondHalfGoals} />
+        <Tile label="2nd Half ET" value={player.secondHalfETGoals} />
         <Tile label="Match Openers" value={player.matchOpeners} />
         <Tile label="Team Openers" value={player.teamOpeners} />
       </div>

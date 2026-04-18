@@ -39,6 +39,7 @@ function summarize(lambdaH: number, lambdaA: number, modelName: string, homeTeam
     pBTTS,
     pOver25,
     topScorelines: cells.slice(0, 5),
+    scorelineGrid: cells.filter((c) => c.score[0] <= 5 && c.score[1] <= 5),
     supportsScoreline: true,
     modelName,
   };

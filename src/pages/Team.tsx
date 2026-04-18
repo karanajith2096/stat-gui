@@ -4,8 +4,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
-  Label,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -18,11 +17,10 @@ import {
   RadarChart,
   ReferenceLine,
   ResponsiveContainer,
-  Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  Cell,
 } from "recharts";
 import {
   buildLeagueAverageTeamStats,
@@ -35,11 +33,10 @@ import {
   goalsForTeam,
   isSetPieceSituation,
   matchesFor,
-  pointsFor,
   resultFor,
 } from "../lib/derive";
 import { useWorkbook } from "../store/workbook";
-import type { Goal, Match, SetPieceBreakdown, TeamSideStats } from "../lib/types";
+import type { Goal, Match, SetPieceBreakdown, TeamSideStats, TeamStats } from "../lib/types";
 
 type Tab = "overview" | "form" | "matches" | "goals" | "spScored" | "spConceded";
 
@@ -94,12 +91,13 @@ export function Team() {
   );
 }
 
-function Tile({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function Tile({ label, value, sub, rank }: { label: string; value: string | number; sub?: string; rank?: string }) {
   return (
     <div className="stat-tile">
       <div className="label">{label}</div>
       <div className="value">{value}</div>
       {sub && <div className="sub">{sub}</div>}
+      {rank && <div className="sub" style={{ color: "#8ea0b2", fontSize: 10 }}>#{rank} / 20</div>}
     </div>
   );
 }
@@ -119,19 +117,29 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
   const t = stats.total;
   const g = stats.games;
 
-  // Normalize radar axes across all teams so no single metric dominates by scale.
-  // Each axis is min-max normalized to 0–100. Inverted axes (lower = better) are
-  // flipped so a higher bar always means "better for this team".
-  const radarData = useMemo(() => {
+  const allTeamStats = useMemo(() => {
     const allTeams = getTeams(matches);
-    const allStats = new Map(allTeams.map((tn) => [tn, buildTeamStats(tn, matches)]));
+    return new Map(allTeams.map((tn) => [tn, buildTeamStats(tn, matches)]));
+  }, [matches]);
 
-    function pg(tn: string, key: keyof TeamSideStats): number {
-      const ts = allStats.get(tn);
-      if (!ts || ts.games === 0) return 0;
-      return (ts.total[key] as number) / ts.games;
-    }
+  const allTeams = useMemo(() => Array.from(allTeamStats.keys()), [allTeamStats]);
 
+  function pgForTeam(tn: string, key: keyof TeamSideStats): number {
+    const ts = allTeamStats.get(tn);
+    if (!ts || ts.games === 0) return 0;
+    return (ts.total[key] as number) / ts.games;
+  }
+
+  function rankFor(key: keyof TeamSideStats, lowerBetter = false): number {
+    const sorted = [...allTeams].sort((a, b) =>
+      lowerBetter
+        ? pgForTeam(a, key) - pgForTeam(b, key)
+        : pgForTeam(b, key) - pgForTeam(a, key)
+    );
+    return sorted.indexOf(team) + 1;
+  }
+
+  const radarData = useMemo(() => {
     type AxisDef = { axis: string; key: keyof TeamSideStats; invert: boolean };
     const axes: AxisDef[] = [
       { axis: "xG",           key: "xG",           invert: false },
@@ -144,7 +152,7 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
     ];
 
     return axes.map(({ axis, key, invert }) => {
-      const vals = allTeams.map((tn) => pg(tn, key));
+      const vals = allTeams.map((tn) => pgForTeam(tn, key));
       const min = Math.min(...vals);
       const max = Math.max(...vals);
       const range = max - min || 1;
@@ -152,7 +160,7 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
       const normalize = (v: number) =>
         invert ? ((max - v) / range) * 100 : ((v - min) / range) * 100;
 
-      const teamRaw = pg(team, key);
+      const teamRaw = pgForTeam(team, key);
       const leagueRaw = leagueAvg[key] as number;
 
       return {
@@ -163,14 +171,7 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
         rawLeague: leagueRaw.toFixed(2),
       };
     });
-  }, [team, matches, leagueAvg]);
-
-  const haData = [
-    { label: "PPG", home: perGame(stats.home, "points"), away: perGame(stats.away, "points") },
-    { label: "xG", home: perGame(stats.home, "xG"), away: perGame(stats.away, "xG") },
-    { label: "xGA", home: perGame(stats.home, "xGA"), away: perGame(stats.away, "xGA") },
-    { label: "Possession", home: perGame(stats.home, "possession"), away: perGame(stats.away, "possession") },
-  ];
+  }, [team, allTeams, allTeamStats, leagueAvg]);
 
   const scored = goalsForTeam(team, goals);
   const conceded = goalsAgainstTeam(team, goals);
@@ -184,18 +185,18 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
       <div className="card">
         <h2 className="card-title">Aggregate stats ({g} games)</h2>
         <div className="stat-grid">
-          <Tile label="Goals" value={`${t.goalsFor} / ${t.goalsAgainst}`} sub={`${perGame(t, "goalsFor").toFixed(2)} per game`} />
-          <Tile label="xG / xGA" value={`${t.xG.toFixed(1)} / ${t.xGA.toFixed(1)}`} sub={`${perGame(t, "xG").toFixed(2)} / ${perGame(t, "xGA").toFixed(2)}`} />
-          <Tile label="Shots / Target" value={`${t.shots} / ${t.shotsOnTarget}`} sub={`${perGame(t, "shots").toFixed(1)} shots/game`} />
-          <Tile label="Big Chances" value={t.bigChances} sub={`${t.bigChancesMissed} missed`} />
-          <Tile label="Corners" value={t.corners} sub={`${perGame(t, "corners").toFixed(1)}/game`} />
-          <Tile label="Possession" value={perGame(t, "possession").toFixed(1) + "%"} />
-          <Tile label="Set Piece Goals" value={t.setPieceGoals} sub={`xG ${t.setPiecexG.toFixed(1)}`} />
-          <Tile label="First Half xG" value={t.firstHalfxG.toFixed(1)} sub={`${((t.firstHalfxG / Math.max(0.01, t.xG)) * 100).toFixed(0)}% of total`} />
-          <Tile label="Yellow / Red" value={`${t.yellow} / ${t.red}`} />
-          <Tile label="Fouls" value={t.fouls} sub={`${perGame(t, "fouls").toFixed(1)}/game`} />
-          <Tile label="Offsides" value={t.offsides} />
-          <Tile label="Duels Won" value={t.duelsWon} sub={`Ground ${t.groundDuelsWon}`} />
+          <Tile label="Goals" value={`${t.goalsFor} / ${t.goalsAgainst}`} sub={`${perGame(t, "goalsFor").toFixed(2)} per game`} rank={String(rankFor("goalsFor"))} />
+          <Tile label="xG / xGA" value={`${t.xG.toFixed(1)} / ${t.xGA.toFixed(1)}`} sub={`${perGame(t, "xG").toFixed(2)} / ${perGame(t, "xGA").toFixed(2)}`} rank={String(rankFor("xG"))} />
+          <Tile label="Shots / Target" value={`${t.shots} / ${t.shotsOnTarget}`} sub={`${perGame(t, "shots").toFixed(1)} shots/game`} rank={String(rankFor("shots"))} />
+          <Tile label="Big Chances" value={t.bigChances} sub={`${t.bigChancesMissed} missed`} rank={String(rankFor("bigChances"))} />
+          <Tile label="Corners" value={t.corners} sub={`${perGame(t, "corners").toFixed(1)}/game`} rank={String(rankFor("corners"))} />
+          <Tile label="Possession" value={perGame(t, "possession").toFixed(1) + "%"} rank={String(rankFor("possession"))} />
+          <Tile label="Set Piece Goals" value={t.setPieceGoals} sub={`xG ${t.setPiecexG.toFixed(1)}`} rank={String(rankFor("setPiecexG"))} />
+          <Tile label="First Half xG" value={t.firstHalfxG.toFixed(1)} sub={`${((t.firstHalfxG / Math.max(0.01, t.xG)) * 100).toFixed(0)}% of total`} rank={String(rankFor("firstHalfxG"))} />
+          <Tile label="Yellow / Red" value={`${t.yellow} / ${t.red}`} rank={String(rankFor("yellow", true))} />
+          <Tile label="Fouls" value={t.fouls} sub={`${perGame(t, "fouls").toFixed(1)}/game`} rank={String(rankFor("fouls", true))} />
+          <Tile label="Offsides" value={t.offsides} rank={String(rankFor("offsides", true))} />
+          <Tile label="Duels Won" value={t.duelsWon} sub={`Ground ${t.groundDuelsWon}`} rank={String(rankFor("duelsWon"))} />
         </div>
       </div>
 
@@ -221,22 +222,7 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
         </div>
       </div>
 
-      <div className="card">
-        <h2 className="card-title">Home vs Away profile</h2>
-        <div className="chart-wrap">
-          <ResponsiveContainer>
-            <BarChart data={haData} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
-              <CartesianGrid stroke="#2a3644" />
-              <XAxis dataKey="label" stroke="#8ea0b2" />
-              <YAxis stroke="#8ea0b2" />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="home" name="Home" fill="#4db3ff" />
-              <Bar dataKey="away" name="Away" fill="#7cd992" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      <HomeAwayTable stats={stats} />
 
       <div className="card">
         <h2 className="card-title">Inside vs Outside the box (goals)</h2>
@@ -246,6 +232,89 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
         </div>
       </div>
     </>
+  );
+}
+
+const HA_METRICS: { key: string; label: string; lowerBetter: boolean }[] = [
+  { key: "ppg",            label: "PPG",               lowerBetter: false },
+  { key: "xG",             label: "xG / game",         lowerBetter: false },
+  { key: "xGA",            label: "xGA / game",        lowerBetter: true  },
+  { key: "possession",     label: "Possession",        lowerBetter: false },
+  { key: "shots",          label: "Shots / game",      lowerBetter: false },
+  { key: "shotsOnTarget",  label: "SoT / game",        lowerBetter: false },
+  { key: "bigChances",     label: "Big Chances / game",lowerBetter: false },
+  { key: "setPiecexG",     label: "Set Piece xG / game",lowerBetter: false },
+  { key: "corners",        label: "Corners / game",    lowerBetter: false },
+  { key: "fouls",          label: "Fouls / game",      lowerBetter: true  },
+  { key: "yellow",         label: "Yellows / game",    lowerBetter: true  },
+];
+
+const DEFAULT_HA_SHOWN = new Set(["ppg", "xG", "xGA", "possession"]);
+
+function haValue(side: TeamSideStats, games: number, key: string): number {
+  if (games === 0) return 0;
+  if (key === "ppg") return side.points / games;
+  return (side[key as keyof TeamSideStats] as number) / games;
+}
+
+function HomeAwayTable({ stats }: { stats: TeamStats }) {
+  const [shown, setShown] = useState<Set<string>>(DEFAULT_HA_SHOWN);
+
+  const toggle = (key: string) =>
+    setShown((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const rows = HA_METRICS.filter((m) => shown.has(m.key));
+
+  return (
+    <div className="card">
+      <h2 className="card-title">Home vs Away profile</h2>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+        {HA_METRICS.map((m) => (
+          <button
+            key={m.key}
+            className={`tab${shown.has(m.key) ? " active" : ""}`}
+            style={{ padding: "3px 10px", fontSize: 11 }}
+            onClick={() => toggle(m.key)}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <table className="stat-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th style={{ textAlign: "right" }}>Home ({stats.home.games})</th>
+            <th style={{ textAlign: "right" }}>Away ({stats.away.games})</th>
+            <th style={{ textAlign: "right" }}>Diff (Away − Home)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ key, label, lowerBetter }) => {
+            const hv = haValue(stats.home, stats.home.games, key);
+            const av = haValue(stats.away, stats.away.games, key);
+            const diff = av - hv;
+            const color =
+              diff === 0 ? "#8ea0b2"
+              : (diff > 0) === !lowerBetter ? "#7cd992"
+              : "#e05252";
+            return (
+              <tr key={key}>
+                <td>{label}</td>
+                <td style={{ textAlign: "right" }}>{hv.toFixed(2)}</td>
+                <td style={{ textAlign: "right" }}>{av.toFixed(2)}</td>
+                <td style={{ textAlign: "right", color }}>{diff > 0 ? "+" : ""}{diff.toFixed(2)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -274,10 +343,61 @@ function DonutCard({ title, inside, outside }: { title: string; inside: number; 
 }
 
 function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
+  const perMatchData = useMemo(() =>
+    form.map((fp) => ({
+      gameweek: fp.gameweek,
+      opponent: fp.opponent,
+      xG: parseFloat(fp.matchXG.toFixed(2)),
+      Goals: fp.matchGoals,
+      luck: parseFloat((fp.matchGoals - fp.matchXG).toFixed(2)),
+    })),
+    [form]
+  );
+
+  const rollingData = useMemo(() =>
+    form.map((fp, i, arr) => {
+      const window = arr.slice(Math.max(0, i - 4), i + 1);
+      const goals = window.reduce((s, f) => s + f.matchGoals, 0);
+      const xG = window.reduce((s, f) => s + f.matchXG, 0);
+      const fhXG = window.reduce((s, f) => s + f.firstHalfXG, 0);
+      const totXG = window.reduce((s, f) => s + f.matchXG, 0);
+      return {
+        gameweek: fp.gameweek,
+        finishingEff: xG > 0 ? parseFloat((goals / xG).toFixed(2)) : null,
+        firstHalfShare: totXG > 0 ? parseFloat(((fhXG / totXG) * 100).toFixed(1)) : null,
+      };
+    }),
+    [form]
+  );
+
+  const possessionBuckets = useMemo(() => {
+    const buckets = [
+      { label: "< 40%", min: 0, max: 40 },
+      { label: "40–50%", min: 40, max: 50 },
+      { label: "50–60%", min: 50, max: 60 },
+      { label: "> 60%", min: 60, max: 101 },
+    ];
+    return buckets.map(({ label, min, max }) => {
+      const inBucket = form.filter((fp) => fp.possession >= min && fp.possession < max);
+      return {
+        label,
+        W: inBucket.filter((fp) => fp.result === "W").length,
+        D: inBucket.filter((fp) => fp.result === "D").length,
+        L: inBucket.filter((fp) => fp.result === "L").length,
+        n: inBucket.length,
+      };
+    });
+  }, [form]);
+
+  const highPoss = form.filter((fp) => fp.possession > 50);
+  const lowPoss = form.filter((fp) => fp.possession <= 50);
+  const ppgHigh = highPoss.length > 0 ? highPoss.reduce((s, fp) => s + fp.points, 0) / highPoss.length : 0;
+  const ppgLow = lowPoss.length > 0 ? lowPoss.reduce((s, fp) => s + fp.points, 0) / lowPoss.length : 0;
+
   return (
     <>
       <div className="card">
-        <h2 className="card-title">Rolling form (PPG) + per-match xG/xGA</h2>
+        <h2 className="card-title">Rolling form & per-match xG</h2>
         <div className="chart-wrap">
           <ResponsiveContainer>
             <LineChart data={form} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
@@ -297,22 +417,59 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
       </div>
 
       <div className="card">
-        <h2 className="card-title">Cumulative xG vs cumulative Goals</h2>
+        <h2 className="card-title">xG vs Goals per match</h2>
         <div className="chart-wrap">
           <ResponsiveContainer>
-            <LineChart data={form}>
+            <ComposedChart data={perMatchData} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
               <CartesianGrid stroke="#2a3644" />
               <XAxis dataKey="gameweek" stroke="#8ea0b2" />
-              <YAxis stroke="#8ea0b2" />
-              <Tooltip />
+              <YAxis yAxisId="left" stroke="#8ea0b2" />
+              <YAxis yAxisId="right" orientation="right" stroke="#8ea0b2" tickFormatter={(v) => (v > 0 ? `+${v}` : v)} />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div style={{ background: "#1c2530", border: "1px solid #2a3644", padding: 8, fontSize: 12 }}>
+                      <b>GW{d.gameweek} vs {d.opponent}</b><br />
+                      xG: {d.xG} · Goals: {d.Goals} · Luck: {d.luck > 0 ? "+" : ""}{d.luck}
+                    </div>
+                  );
+                }}
+              />
               <Legend />
-              <Line dataKey="cumulativeGoals" name="Goals" stroke="#7cd992" dot={false} />
-              <Line dataKey="cumulativeXG" name="xG" stroke="#4db3ff" dot={false} />
-              <Line dataKey="cumulativeGoalsAgainst" name="Goals Against" stroke="#e05252" dot={false} />
-              <Line dataKey="cumulativeXGA" name="xGA" stroke="#f5a623" dot={false} />
+              <Bar yAxisId="left" dataKey="xG" name="xG" fill="#4db3ff" opacity={0.7} />
+              <Bar yAxisId="left" dataKey="Goals" name="Goals" fill="#7cd992" opacity={0.7} />
+              <Line yAxisId="right" dataKey="luck" name="Goals − xG" stroke="#f5a623" dot={false} strokeWidth={2} />
+              <ReferenceLine yAxisId="right" y={0} stroke="#6b7785" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">Rolling finishing efficiency & 1st-half xG share (5-match window)</h2>
+        <div className="chart-wrap">
+          <ResponsiveContainer>
+            <LineChart data={rollingData} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
+              <CartesianGrid stroke="#2a3644" />
+              <XAxis dataKey="gameweek" stroke="#8ea0b2" />
+              <YAxis yAxisId="left" stroke="#8ea0b2" domain={[0, "auto"]} tickFormatter={(v) => v.toFixed(1)} />
+              <YAxis yAxisId="right" orientation="right" stroke="#8ea0b2" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+              <Tooltip
+                formatter={(value: number, name: string) =>
+                  [name === "1st Half xG %" ? `${value?.toFixed(1)}%` : value?.toFixed(2), name]
+                }
+              />
+              <Legend />
+              <ReferenceLine yAxisId="left" y={1} stroke="#8ea0b2" strokeDasharray="4 2" label={{ value: "1.0", fill: "#8ea0b2", fontSize: 10 }} />
+              <ReferenceLine yAxisId="right" y={50} stroke="#8ea0b2" strokeDasharray="4 2" />
+              <Line yAxisId="left" dataKey="finishingEff" name="Goals / xG" stroke="#7cd992" dot={false} connectNulls />
+              <Line yAxisId="right" dataKey="firstHalfShare" name="1st Half xG %" stroke="#b278f0" dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </div>
+        <div className="subtle">Goals/xG above 1.0 = overperforming; 1st-half xG % above 50% = early starters.</div>
       </div>
 
       <div className="card">
@@ -333,21 +490,34 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
       </div>
 
       <div className="card">
-        <h2 className="card-title">Possession vs points earned (per match)</h2>
-        <div className="chart-wrap">
-          <ResponsiveContainer>
-            <ScatterChart margin={{ top: 10, right: 30, bottom: 30, left: 10 }}>
-              <CartesianGrid stroke="#2a3644" />
-              <XAxis type="number" dataKey="possession" stroke="#8ea0b2" domain={[20, 80]}>
-                <Label value="Possession %" position="insideBottom" offset={-20} fill="#8ea0b2" />
-              </XAxis>
-              <YAxis type="number" dataKey="points" stroke="#8ea0b2" domain={[0, 3]} ticks={[0, 1, 3]}>
-                <Label value="Points" angle={-90} position="insideLeft" fill="#8ea0b2" />
-              </YAxis>
-              <Tooltip />
-              <Scatter data={form} fill="#f5a623" />
-            </ScatterChart>
-          </ResponsiveContainer>
+        <h2 className="card-title">Results by possession range</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center" }}>
+          <div className="chart-wrap" style={{ minHeight: 220 }}>
+            <ResponsiveContainer>
+              <BarChart data={possessionBuckets}>
+                <CartesianGrid stroke="#2a3644" />
+                <XAxis dataKey="label" stroke="#8ea0b2" />
+                <YAxis stroke="#8ea0b2" allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="W" stackId="a" fill="#7cd992" name="Win" />
+                <Bar dataKey="D" stackId="a" fill="#8ea0b2" name="Draw" />
+                <Bar dataKey="L" stackId="a" fill="#e05252" name="Loss" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="stat-tile">
+              <div className="label">PPG &gt; 50% poss</div>
+              <div className="value">{ppgHigh.toFixed(2)}</div>
+              <div className="sub">{highPoss.length} games</div>
+            </div>
+            <div className="stat-tile">
+              <div className="label">PPG ≤ 50% poss</div>
+              <div className="value">{ppgLow.toFixed(2)}</div>
+              <div className="sub">{lowPoss.length} games</div>
+            </div>
+          </div>
         </div>
       </div>
     </>
@@ -411,7 +581,6 @@ function GoalsTab({ team, goals }: { team: string; goals: Goal[] }) {
     against: againstGoals.filter((g) => g.Situation === s).length,
   }));
 
-  // Goal-minute histogram in 15-min buckets
   const buckets = [0, 15, 30, 45, 60, 75, 90];
   const bucketData = buckets.map((b, i) => {
     const lo = b;
@@ -475,8 +644,8 @@ function SetPieceTab({ side, breakdown }: { side: "scored" | "conceded"; breakdo
           <Tile label="Team Openers" value={breakdown.teamOpeners} />
           <Tile label="Home" value={breakdown.home} />
           <Tile label="Away" value={breakdown.away} />
-          <Tile label="1st Half" value={breakdown.firstHalf} />
-          <Tile label="2nd Half" value={breakdown.secondHalf} />
+          <Tile label="1st Half" value={breakdown.firstHalf} sub={breakdown.firstHalfET > 0 ? `${breakdown.firstHalfET} in ET` : undefined} />
+          <Tile label="2nd Half" value={breakdown.secondHalf} sub={breakdown.secondHalfET > 0 ? `${breakdown.secondHalfET} in ET` : undefined} />
         </div>
       </div>
 
@@ -498,3 +667,6 @@ function SetPieceTab({ side, breakdown }: { side: "scored" | "conceded"; breakdo
     </>
   );
 }
+
+// Prevent unused-import lint for isSetPieceSituation (used in other tabs indirectly)
+void isSetPieceSituation;
