@@ -15,6 +15,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <span className="brand">PL Stats</span>
         <NavLink to="/" end>Table</NavLink>
         <NavLink to="/scorers">Scorers</NavLink>
+        <NavLink to="/highlights">Highlights</NavLink>
         <NavLink to="/trends">Trends</NavLink>
         <NavLink to="/progression">Progression</NavLink>
         <NavLink to="/predict">Predict</NavLink>

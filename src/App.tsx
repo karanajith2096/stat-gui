@@ -8,6 +8,7 @@ import { Team } from "./pages/Team";
 import { Trends } from "./pages/Trends";
 import { Progression } from "./pages/Progression";
 import { Predict } from "./pages/Predict";
+import { Highlights } from "./pages/Highlights";
 
 export default function App() {
   const hasData = useWorkbook((s) => s.matches.length > 0 && s.goals.length > 0);
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/trends" element={<Trends />} />
         <Route path="/progression" element={<Progression />} />
         <Route path="/predict" element={<Predict />} />
+        <Route path="/highlights" element={<Highlights />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

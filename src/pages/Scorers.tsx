@@ -58,6 +58,9 @@ function minuteBucket(goalTime: number, addedTime: number | null): string {
   return "76–90";
 }
 
+const PAGE_SIZE = 15;
+type SortMode = "goals" | "assists" | "combined";
+
 export function Scorers() {
   const matches = useWorkbook((s) => s.matches);
   const goals = useWorkbook((s) => s.goals);
@@ -66,7 +69,9 @@ export function Scorers() {
   const [teamFilter, setTeamFilter] = useState("");
   const [posFilter, setPosFilter] = useState("");
   const [natFilter, setNatFilter] = useState("");
-  const [showAll, setShowAll] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("goals");
+  const [tableSort, setTableSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "goals", dir: "desc" });
+  const [page, setPage] = useState(1);
   const [drawerPlayer, setDrawerPlayer] = useState<ScorerRow | null>(null);
   const [histPlayer, setHistPlayer] = useState("");
   const [histTeam, setHistTeam] = useState("");
@@ -75,59 +80,151 @@ export function Scorers() {
   const positions = useMemo(() => Array.from(new Set(scorers.map((s) => s.position).filter(Boolean))).sort(), [scorers]);
   const nats = useMemo(() => Array.from(new Set(scorers.map((s) => s.nationality).filter(Boolean))).sort(), [scorers]);
 
-  const filtered = useMemo(() =>
-    scorers
-      .filter((s) => s.goals > 0)
+  const filtered = useMemo(() => {
+    return scorers
+      .filter((s) => s.goals > 0 || (sortMode === "assists" && s.assists > 0))
       .filter((s) => !teamFilter || s.team === teamFilter)
       .filter((s) => !posFilter || s.position === posFilter)
-      .filter((s) => !natFilter || s.nationality === natFilter),
-    [scorers, teamFilter, posFilter, natFilter]
-  );
+      .filter((s) => !natFilter || s.nationality === natFilter);
+  }, [scorers, teamFilter, posFilter, natFilter, sortMode]);
 
-  const displayed = showAll ? filtered : filtered.slice(0, 10);
+  // Reset to page 1 when filters or sort change
+  const handleFilterChange = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setter(e.target.value);
+    setPage(1);
+  };
+  const handleSortMode = (mode: SortMode) => {
+    setSortMode(mode);
+    setPage(1);
+    const key = mode === "goals" ? "goals" : mode === "assists" ? "assists" : "combined";
+    setTableSort({ key, dir: "desc" });
+  };
 
   const columns: Column<ScorerRow>[] = useMemo(() => [
-    { key: "player", header: "Player", value: (r) => r.player, align: "left" },
+    {
+      key: "player", header: "Player", value: (r) => r.player, align: "left",
+      render: (r) => (
+        <span style={{ color: "#4db3ff", textDecoration: "underline", cursor: "pointer" }}>
+          {r.player}
+        </span>
+      ),
+    },
     { key: "team", header: "Team", value: (r) => r.team, align: "left" },
-    { key: "goals", header: "Goals", value: (r) => r.goals, initialSort: "desc", render: (r) => <b>{r.goals}</b> },
+    { key: "goals", header: "Goals", value: (r) => r.goals, render: (r) => <b>{r.goals}</b> },
     { key: "assists", header: "Assists", value: (r) => r.assists },
-    { key: "teamGoalShare", header: "Team %", value: (r) => r.teamGoalShare, render: (r) => (r.teamGoalShare * 100).toFixed(1) + "%" },
+    { key: "combined", header: "G+A", value: (r) => r.goals + r.assists, render: (r) => r.goals + r.assists },
+    { key: "teamGoalShare", header: "G+A %", value: (r) => r.teamGoalShare, render: (r) => (r.teamGoalShare * 100).toFixed(1) + "%", },
     { key: "penalties", header: "Pens", value: (r) => r.penalties },
     { key: "homeGoals", header: "Home", value: (r) => r.homeGoals },
     { key: "awayGoals", header: "Away", value: (r) => r.awayGoals },
     { key: "firstHalfGoals", header: "1st Half", value: (r) => r.firstHalfGoals },
     { key: "secondHalfGoals", header: "2nd Half", value: (r) => r.secondHalfGoals },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   ], []);
+
+  const sorted = useMemo(() => {
+    const col = columns.find((c) => c.key === tableSort.key);
+    if (!col?.value) return filtered;
+    const valueOf = col.value;
+    return filtered.slice().sort((a, b) => {
+      const va = valueOf(a), vb = valueOf(b);
+      if (typeof va === "number" && typeof vb === "number")
+        return tableSort.dir === "asc" ? va - vb : vb - va;
+      return tableSort.dir === "asc"
+        ? String(va).localeCompare(String(vb))
+        : String(vb).localeCompare(String(va));
+    });
+  }, [filtered, columns, tableSort]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const displayed = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const pageWindow = useMemo(() => {
+    const pages: number[] = [];
+    const start = Math.max(1, safePage - 2);
+    const end = Math.min(totalPages, safePage + 2);
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  }, [safePage, totalPages]);
 
   return (
     <div>
       <div className="card">
         <h2 className="card-title">Scorer Leaderboards</h2>
+
+        {/* Sort tabs */}
+        <div className="tabs" style={{ borderBottom: "none", marginBottom: 12 }}>
+          {(["goals", "assists", "combined"] as SortMode[]).map((m) => (
+            <button
+              key={m}
+              className={`tab ${sortMode === m ? "active" : ""}`}
+              onClick={() => handleSortMode(m)}
+            >
+              {m === "goals" ? "Goals" : m === "assists" ? "Assists" : "Goals + Assists"}
+            </button>
+          ))}
+        </div>
+
+        {/* Filters */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-          <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}>
+          <select value={teamFilter} onChange={handleFilterChange(setTeamFilter)}>
             <option value="">All teams</option>
             {teams.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <select value={posFilter} onChange={(e) => setPosFilter(e.target.value)}>
+          <select value={posFilter} onChange={handleFilterChange(setPosFilter)}>
             <option value="">All positions</option>
             {positions.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <select value={natFilter} onChange={(e) => setNatFilter(e.target.value)}>
+          <select value={natFilter} onChange={handleFilterChange(setNatFilter)}>
             <option value="">All nationalities</option>
             {nats.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </div>
+
         <SortableTable
           rows={displayed}
           columns={columns}
-          defaultSort={{ key: "goals", dir: "desc" }}
+          sort={tableSort}
+          onSortChange={(s) => { setTableSort(s); setPage(1); }}
           getRowKey={(r) => `${r.player}__${r.team}`}
           onRowClick={(r) => setDrawerPlayer(r)}
         />
-        <div style={{ marginTop: 10, textAlign: "center" }}>
-          <button className="tab" onClick={() => setShowAll((v) => !v)}>
-            {showAll ? `Show top 10 (${filtered.length} total)` : `Show all ${filtered.length} scorers`}
-          </button>
+
+        {/* Pagination */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 12, color: "#8ea0b2" }}>
+            {filtered.length} players · page {safePage} of {totalPages}
+          </span>
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <button
+              onClick={() => setPage(1)}
+              disabled={safePage === 1}
+              style={pagerBtn(safePage === 1)}
+            >«</button>
+            <button
+              onClick={() => setPage(safePage - 1)}
+              disabled={safePage === 1}
+              style={pagerBtn(safePage === 1)}
+            >‹</button>
+            {pageWindow.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPage(p)}
+                style={pagerBtn(false, p === safePage)}
+              >{p}</button>
+            ))}
+            <button
+              onClick={() => setPage(safePage + 1)}
+              disabled={safePage === totalPages}
+              style={pagerBtn(safePage === totalPages)}
+            >›</button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={safePage === totalPages}
+              style={pagerBtn(safePage === totalPages)}
+            >»</button>
+          </div>
         </div>
       </div>
 
@@ -357,6 +454,31 @@ function GoalMinuteHistogram({ goals, players, teams, selectedPlayer, selectedTe
 }
 
 function PlayerDrawer({ player, onClose }: { player: ScorerRow; onClose: () => void }) {
+  const [tab, setTab] = useState<"goals" | "assists">("goals");
+  const goals = useWorkbook((s) => s.goals);
+  const matches = useWorkbook((s) => s.matches);
+
+  const assistLog = useMemo(() => {
+    const matchMap = new Map<number, Match>();
+    matches.forEach((m) => matchMap.set(m.MatchNo, m));
+    return goals
+      .filter((g) => g.Assist === player.player && g.Team === player.team && g.GoalOG === "G")
+      .map((g) => {
+        const m = matchMap.get(g.MatchNo);
+        return {
+          gameweek: m?.Gameweek ?? 0,
+          scorer: g.Scorer,
+          against: g.Against,
+          homeAway: g.HomeAway,
+          minute: g.GoalTime,
+          addedTime: g.AddedTime,
+          situation: g.Situation,
+          video: g.Video,
+        };
+      })
+      .sort((a, b) => a.gameweek - b.gameweek || a.minute - b.minute);
+  }, [goals, matches, player]);
+
   return (
     <div className="drawer">
       <button className="close" onClick={onClose}>×</button>
@@ -365,7 +487,7 @@ function PlayerDrawer({ player, onClose }: { player: ScorerRow; onClose: () => v
       <div className="stat-grid" style={{ marginTop: 16 }}>
         <Tile label="Goals" value={player.goals} />
         <Tile label="Assists" value={player.assists} />
-        <Tile label="Team %" value={(player.teamGoalShare * 100).toFixed(1) + "%"} />
+        <Tile label="G+A % of team goals" value={(player.teamGoalShare * 100).toFixed(1) + "%"} />
         <Tile label="Penalties" value={player.penalties} />
         <Tile label="Tie Breakers" value={player.tieBreakers} />
         <Tile label="Equalizers" value={player.equalizers} />
@@ -379,29 +501,87 @@ function PlayerDrawer({ player, onClose }: { player: ScorerRow; onClose: () => v
         <Tile label="Match Openers" value={player.matchOpeners} />
         <Tile label="Team Openers" value={player.teamOpeners} />
       </div>
-      <h3 style={{ marginTop: 20 }}>Goal log</h3>
-      <table className="stat-table">
-        <thead>
-          <tr>
-            <th>GW</th><th>Opp</th><th>H/A</th><th>Min</th><th>Situation</th><th>xG</th><th>▶</th>
-          </tr>
-        </thead>
-        <tbody>
-          {player.goalLog.map((g, i) => (
-            <tr key={i}>
-              <td>{g.gameweek}</td>
-              <td>{g.against}</td>
-              <td>{g.homeAway}</td>
-              <td>{g.minute}{g.addedTime ? `+${g.addedTime}` : ""}</td>
-              <td>{g.situation}</td>
-              <td>{g.xG?.toFixed(2) ?? "—"}</td>
-              <td>{g.video ? <a href={g.video} target="_blank" rel="noreferrer">▶</a> : "—"}</td>
+
+      <div className="tabs" style={{ marginTop: 20, borderBottom: "1px solid #2a3644" }}>
+        <button className={`tab ${tab === "goals" ? "active" : ""}`} onClick={() => setTab("goals")}>
+          Goal log ({player.goalLog.length})
+        </button>
+        <button className={`tab ${tab === "assists" ? "active" : ""}`} onClick={() => setTab("assists")}>
+          Assists ({assistLog.length})
+        </button>
+      </div>
+
+      {tab === "goals" && (
+        <table className="stat-table" style={{ marginTop: 12 }}>
+          <thead>
+            <tr>
+              <th>GW</th><th>Opp</th><th>H/A</th><th>Min</th><th>Situation</th><th>xG</th><th>▶</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {player.goalLog.map((g, i) => (
+              <tr key={i}>
+                <td>{g.gameweek}</td>
+                <td>{g.against}</td>
+                <td>{g.homeAway}</td>
+                <td>{g.minute}{g.addedTime ? `+${g.addedTime}` : ""}</td>
+                <td>{g.situation}</td>
+                <td>{g.xG?.toFixed(2) ?? "—"}</td>
+                <td>
+                  {g.video
+                    ? <a href={g.video} target="_blank" rel="noreferrer" style={{ color: "#4db3ff" }}>▶</a>
+                    : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {tab === "assists" && (
+        assistLog.length === 0
+          ? <div className="subtle" style={{ marginTop: 16 }}>No assists recorded.</div>
+          : (
+            <table className="stat-table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>GW</th><th>Scorer</th><th>Opp</th><th>H/A</th><th>Min</th><th>Situation</th><th>▶</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assistLog.map((g, i) => (
+                  <tr key={i}>
+                    <td>{g.gameweek}</td>
+                    <td>{g.scorer}</td>
+                    <td>{g.against}</td>
+                    <td>{g.homeAway}</td>
+                    <td>{g.minute}{g.addedTime ? `+${g.addedTime}` : ""}</td>
+                    <td>{g.situation}</td>
+                    <td>
+                      {g.video
+                        ? <a href={g.video} target="_blank" rel="noreferrer" style={{ color: "#4db3ff" }}>▶</a>
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+      )}
     </div>
   );
+}
+
+function pagerBtn(disabled: boolean, active = false): React.CSSProperties {
+  return {
+    padding: "3px 9px",
+    fontSize: 12,
+    borderRadius: 4,
+    border: `1px solid ${active ? "#4db3ff" : "#2a3644"}`,
+    background: active ? "#1a4a8a" : "transparent",
+    color: disabled ? "#2a3644" : active ? "#4db3ff" : "#8ea0b2",
+    cursor: disabled ? "default" : "pointer",
+  };
 }
 
 function Tile({ label, value }: { label: string; value: number | string }) {

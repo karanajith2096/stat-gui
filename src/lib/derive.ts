@@ -2,6 +2,7 @@ import type {
   FormPoint,
   Goal,
   GoalLogEntry,
+  HighlightGoal,
   Match,
   ScorerRow,
   SetPieceBreakdown,
@@ -273,7 +274,7 @@ export function buildScorerLeaderboard(goals: Goal[], matches: Match[]): ScorerR
   const rows = Array.from(scorerMap.values());
   for (const r of rows) {
     const teamTotal = teamGoalsTotal.get(r.team) ?? 0;
-    r.teamGoalShare = teamTotal > 0 ? r.goals / teamTotal : 0;
+    r.teamGoalShare = teamTotal > 0 ? (r.goals + r.assists) / teamTotal : 0;
     r.goalLog.sort((a, b) => a.date.getTime() - b.date.getTime() || a.minute - b.minute);
   }
   rows.sort((a, b) => b.goals - a.goals || b.assists - a.assists || a.player.localeCompare(b.player));
@@ -645,4 +646,90 @@ export function buildLeagueAverageTeamStats(matches: Match[]): TeamSideStats {
   });
   perGame.games = gamesTotal / Math.max(1, teams.length);
   return perGame;
+}
+
+// --- Highlight goals (for /highlights page) ---
+export function buildHighlightGoals(goals: Goal[], matches: Match[]): HighlightGoal[] {
+  const matchMap = new Map<number, Match>();
+  matches.forEach((m) => matchMap.set(m.MatchNo, m));
+
+  const byMatch = new Map<number, Goal[]>();
+  for (const g of goals) {
+    if (!byMatch.has(g.MatchNo)) byMatch.set(g.MatchNo, []);
+    byMatch.get(g.MatchNo)!.push(g);
+  }
+  byMatch.forEach((arr) => arr.sort((a, b) => a.MatchGoalNo - b.MatchGoalNo));
+
+  const result: HighlightGoal[] = [];
+
+  for (const [matchNo, arr] of byMatch.entries()) {
+    const match = matchMap.get(matchNo);
+    if (!match) continue;
+    const homeTeam = match.Home;
+    const awayTeam = match.Away;
+    let hScore = 0, aScore = 0;
+
+    for (const g of arr) {
+      const scoringHome = g.HomeAway === "H";
+      const before = scoringHome ? { us: hScore, them: aScore } : { us: aScore, them: hScore };
+
+      const creditTeam = g.Team;
+      if (creditTeam === homeTeam) hScore++;
+      else if (creditTeam === awayTeam) aScore++;
+
+      const afterUs = creditTeam === (scoringHome ? homeTeam : awayTeam) ? before.us + 1 : before.us;
+      const afterThem = creditTeam === (scoringHome ? homeTeam : awayTeam) ? before.them : before.them + 1;
+
+      result.push({
+        goalNo: g.GoalNo,
+        matchNo: g.MatchNo,
+        scorer: g.Scorer,
+        team: g.Team,
+        against: g.Against,
+        homeAway: g.HomeAway,
+        minute: g.GoalTime,
+        addedTime: g.AddedTime,
+        situation: g.Situation,
+        shotXG: g.ShotXG,
+        video: g.Video,
+        gameweek: match.Gameweek,
+        date: match.Date,
+        homeTeam,
+        awayTeam,
+        finalHomeGoals: match.HomeGoals,
+        finalAwayGoals: match.AwayGoals,
+        isEqualizer: before.us < before.them && afterUs === afterThem,
+        isTieBreaker: before.us === before.them && before.us > 0 && afterUs > afterThem,
+        isWhileTrailing: before.us < before.them,
+        isMatchOpener: g.MatchGoalNo === 1,
+      });
+    }
+  }
+
+  return result.sort((a, b) => {
+    if (a.gameweek !== b.gameweek) return a.gameweek - b.gameweek;
+    return a.minute - b.minute;
+  });
+}
+
+export function buildGoalOfTheGW(highlights: HighlightGoal[]): Map<number, HighlightGoal> {
+  const byGW = new Map<number, HighlightGoal[]>();
+  for (const h of highlights) {
+    if (!h.video) continue;
+    if (!byGW.has(h.gameweek)) byGW.set(h.gameweek, []);
+    byGW.get(h.gameweek)!.push(h);
+  }
+
+  const result = new Map<number, HighlightGoal>();
+  for (const [gw, goals] of byGW.entries()) {
+    const pick = (
+      goals.find((g) => g.isTieBreaker && g.minute >= 80) ??
+      goals.find((g) => g.isEqualizer && g.minute >= 80) ??
+      goals.find((g) => g.isWhileTrailing) ??
+      goals.slice().sort((a, b) => (b.shotXG ?? 0) - (a.shotXG ?? 0))[0]
+    );
+    if (pick) result.set(gw, pick);
+  }
+
+  return result;
 }

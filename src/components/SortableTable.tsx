@@ -15,17 +15,24 @@ export function SortableTable<T>({
   rows,
   columns,
   defaultSort,
+  sort,
+  onSortChange,
   getRowKey,
   onRowClick,
 }: {
   rows: T[];
   columns: Column<T>[];
   defaultSort?: { key: string; dir: "asc" | "desc" };
+  sort?: { key: string; dir: "asc" | "desc" };
+  onSortChange?: (sort: { key: string; dir: "asc" | "desc" }) => void;
   getRowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
 }) {
-  const [sortKey, setSortKey] = useState<string | undefined>(defaultSort?.key);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">(defaultSort?.dir ?? "desc");
+  const [internalKey, setInternalKey] = useState<string | undefined>(defaultSort?.key);
+  const [internalDir, setInternalDir] = useState<"asc" | "desc">(defaultSort?.dir ?? "desc");
+
+  const sortKey = sort?.key ?? internalKey;
+  const sortDir = sort?.dir ?? internalDir;
 
   const sorted = useMemo(() => {
     if (!sortKey) return rows;
@@ -45,10 +52,12 @@ export function SortableTable<T>({
   }, [rows, columns, sortKey, sortDir]);
 
   const toggleSort = (key: string) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(key);
-      setSortDir("desc");
+    const newDir = sortKey === key && sortDir === "desc" ? "asc" : "desc";
+    if (onSortChange) {
+      onSortChange({ key, dir: newDir });
+    } else {
+      setInternalKey(key);
+      setInternalDir(newDir);
     }
   };
 
