@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { buildPositionByGW, buildProgression, type ProgressionMetric } from "../lib/derive";
+import { buildPositionByGW, buildProgression, matchesFor, resultFor, type ProgressionMetric } from "../lib/derive";
+import type { Match } from "../lib/types";
 import { useWorkbook } from "../store/workbook";
 
 type View = "table" | "line" | "bump";
@@ -20,6 +21,18 @@ export function Progression() {
 
   const prog = useMemo(() => buildProgression(matches, metric), [matches, metric]);
   const bump = useMemo(() => (view === "bump" ? buildPositionByGW(matches) : null), [matches, view]);
+
+  // Build team -> GW -> match lookup for per-cell coloring
+  const gwMatchMap = useMemo(() => {
+    const map = new Map<string, Map<number, Match>>();
+    for (const m of matches) {
+      for (const team of [m.Home, m.Away]) {
+        if (!map.has(team)) map.set(team, new Map());
+        map.get(team)!.set(m.Gameweek, m);
+      }
+    }
+    return map;
+  }, [matches]);
 
   const sortedSeries = useMemo(() => {
     return [...prog.series].sort((a, b) => {
@@ -76,8 +89,8 @@ export function Progression() {
           <table className="stat-table progression-table">
             <thead>
               <tr>
-                <th className="col-team">Team</th>
-                {prog.gameweeks.map((gw) => <th key={gw}>GW{gw}</th>)}
+                <th className="col-team">Team / GW</th>
+                {prog.gameweeks.map((gw) => <th key={gw}>{gw}</th>)}
                 <th>Total</th>
               </tr>
             </thead>
@@ -85,9 +98,16 @@ export function Progression() {
               {sortedSeries.map((s) => (
                 <tr key={s.team}>
                   <td className="col-team">{s.team}</td>
-                  {s.values.map((v, i) => (
-                    <td key={i}>{v === null ? "" : fmtVal(v, metric)}</td>
-                  ))}
+                  {s.values.map((v, i) => {
+                    const gw = prog.gameweeks[i];
+                    const match = gwMatchMap.get(s.team)?.get(gw);
+                    const bg = match ? gwCellColor(match, s.team, metric) : "transparent";
+                    return (
+                      <td key={i} style={{ background: bg, textAlign: "center" }}>
+                        {v === null ? "" : fmtVal(v, metric)}
+                      </td>
+                    );
+                  })}
                   <td><b>{fmtVal(s.values.at(-1) ?? 0, metric)}</b></td>
                 </tr>
               ))}
@@ -156,6 +176,32 @@ export function Progression() {
 function fmtVal(v: number, metric: ProgressionMetric): string {
   if (metric === "xG" || metric === "xGA") return v.toFixed(1);
   return String(Math.round(v));
+}
+
+function gwCellColor(match: Match, team: string, metric: ProgressionMetric): string {
+  const isHome = match.Home === team;
+  const result = resultFor(match, team);
+
+  if (metric === "points") {
+    return result === "W" ? "#1a3d24" : result === "D" ? "#2d3748" : "#3d1a1a";
+  }
+  if (metric === "goalsScored") {
+    const gf = isHome ? match.HomeGoals : match.AwayGoals;
+    return gf >= 3 ? "#1a3d24" : gf >= 1 ? "#2d3748" : "#3d1a1a";
+  }
+  if (metric === "goalsConceded") {
+    const ga = isHome ? match.AwayGoals : match.HomeGoals;
+    return ga === 0 ? "#1a3d24" : ga <= 2 ? "#2d3748" : "#3d1a1a";
+  }
+  if (metric === "xG") {
+    const xg = isHome ? match.HomeXG : match.AwayXG;
+    return xg >= 2 ? "#1a3d24" : xg >= 1 ? "#2d3748" : "#3d1a1a";
+  }
+  if (metric === "xGA") {
+    const xga = isHome ? match.AwayXG : match.HomeXG;
+    return xga < 1 ? "#1a3d24" : xga <= 2 ? "#2d3748" : "#3d1a1a";
+  }
+  return "transparent";
 }
 
 const TEAM_COLORS = [
