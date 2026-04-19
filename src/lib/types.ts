@@ -151,6 +151,30 @@ export interface GoalLogEntry {
   video: string | null;
 }
 
+export interface HighlightGoal {
+  goalNo: number;
+  matchNo: number;
+  scorer: string;
+  team: string;
+  against: string;
+  homeAway: "H" | "A";
+  minute: number;
+  addedTime: number | null;
+  situation: string;
+  shotXG: number | null;
+  video: string | null;
+  gameweek: number;
+  date: Date;
+  homeTeam: string;
+  awayTeam: string;
+  finalHomeGoals: number;
+  finalAwayGoals: number;
+  isEqualizer: boolean;
+  isTieBreaker: boolean;
+  isWhileTrailing: boolean;
+  isMatchOpener: boolean;
+}
+
 export interface TeamStats {
   team: string;
   games: number;
