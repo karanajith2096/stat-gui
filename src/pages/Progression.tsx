@@ -18,6 +18,8 @@ export function Progression() {
   const matches = useWorkbook((s) => s.matches);
   const [metric, setMetric] = useState<ProgressionMetric>("points");
   const [view, setView] = useState<View>("table");
+  const [lineHighlighted, setLineHighlighted] = useState<string | null>(null);
+  const [bumpHighlighted, setBumpHighlighted] = useState<string | null>(null);
 
   const prog = useMemo(() => buildProgression(matches, metric), [matches, metric]);
   const bump = useMemo(() => (view === "bump" ? buildPositionByGW(matches) : null), [matches, view]);
@@ -124,22 +126,59 @@ export function Progression() {
                 <CartesianGrid stroke="#2a3644" />
                 <XAxis dataKey="gameweek" stroke="#8ea0b2" />
                 <YAxis stroke="#8ea0b2" />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const items = lineHighlighted
+                      ? payload.filter((p) => p.dataKey === lineHighlighted)
+                      : payload;
+                    return (
+                      <div style={{ background: "#1c2530", border: "1px solid #2a3644", padding: 8, fontSize: 12 }}>
+                        <div style={{ marginBottom: 4, color: "#8ea0b2" }}>GW {label}</div>
+                        {items.map((p) => (
+                          <div key={String(p.dataKey)} style={{ color: p.stroke as string }}>
+                            {p.dataKey}: {p.value ?? "—"}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }}
+                />
                 {prog.series.map((s, i) => (
                   <Line
                     key={s.team}
                     dataKey={s.team}
                     stroke={TEAM_COLORS[i % TEAM_COLORS.length]}
                     dot={false}
-                    strokeWidth={1.5}
+                    strokeWidth={lineHighlighted === s.team ? 2.5 : 1.5}
+                    strokeOpacity={lineHighlighted === null || lineHighlighted === s.team ? 1 : 0.08}
                     connectNulls
                   />
                 ))}
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="subtle">Click legend entries to toggle teams.</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+            {prog.series.map((s, i) => (
+              <button
+                key={s.team}
+                onClick={() => setLineHighlighted(lineHighlighted === s.team ? null : s.team)}
+                style={{
+                  background: lineHighlighted === s.team ? TEAM_COLORS[i % TEAM_COLORS.length] : "transparent",
+                  border: `1px solid ${TEAM_COLORS[i % TEAM_COLORS.length]}`,
+                  color: lineHighlighted === s.team ? "#0d1117" : TEAM_COLORS[i % TEAM_COLORS.length],
+                  borderRadius: 4,
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  opacity: lineHighlighted !== null && lineHighlighted !== s.team ? 0.35 : 1,
+                }}
+              >
+                {s.team}
+              </button>
+            ))}
+          </div>
+          <div className="subtle" style={{ marginTop: 8 }}>Click a team to highlight. Click again to clear.</div>
         </div>
       )}
 
@@ -152,21 +191,59 @@ export function Progression() {
                 <CartesianGrid stroke="#2a3644" />
                 <XAxis dataKey="gameweek" stroke="#8ea0b2" />
                 <YAxis stroke="#8ea0b2" reversed domain={[1, bump.series.length]} ticks={Array.from({ length: bump.series.length }, (_, i) => i + 1)} />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const items = bumpHighlighted
+                      ? payload.filter((p) => p.dataKey === bumpHighlighted)
+                      : payload.slice().sort((a, b) => (a.value as number) - (b.value as number));
+                    return (
+                      <div style={{ background: "#1c2530", border: "1px solid #2a3644", padding: 8, fontSize: 12, maxHeight: 220, overflowY: "auto" }}>
+                        <div style={{ marginBottom: 4, color: "#8ea0b2" }}>GW {label}</div>
+                        {items.map((p) => (
+                          <div key={String(p.dataKey)} style={{ color: p.stroke as string }}>
+                            #{p.value} {p.dataKey}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }}
+                />
                 {bump.series.map((s, i) => (
                   <Line
                     key={s.team}
                     dataKey={s.team}
                     stroke={TEAM_COLORS[i % TEAM_COLORS.length]}
                     dot={false}
-                    strokeWidth={1.5}
+                    strokeWidth={bumpHighlighted === s.team ? 2.5 : 1.5}
+                    strokeOpacity={bumpHighlighted === null || bumpHighlighted === s.team ? 1 : 0.08}
                     connectNulls
                   />
                 ))}
               </LineChart>
             </ResponsiveContainer>
           </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+            {bump.series.map((s, i) => (
+              <button
+                key={s.team}
+                onClick={() => setBumpHighlighted(bumpHighlighted === s.team ? null : s.team)}
+                style={{
+                  background: bumpHighlighted === s.team ? TEAM_COLORS[i % TEAM_COLORS.length] : "transparent",
+                  border: `1px solid ${TEAM_COLORS[i % TEAM_COLORS.length]}`,
+                  color: bumpHighlighted === s.team ? "#0d1117" : TEAM_COLORS[i % TEAM_COLORS.length],
+                  borderRadius: 4,
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  opacity: bumpHighlighted !== null && bumpHighlighted !== s.team ? 0.35 : 1,
+                }}
+              >
+                {s.team}
+              </button>
+            ))}
+          </div>
+          <div className="subtle" style={{ marginTop: 8 }}>Click a team to highlight. Click again to clear.</div>
         </div>
       )}
     </div>
