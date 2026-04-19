@@ -210,7 +210,7 @@ function Overview({ team, stats, leagueAvg, goals, matches }: {
               <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} stroke="#2a3644" />
               <Radar name={team} dataKey="team" stroke="#4db3ff" fill="#4db3ff" fillOpacity={0.4} />
               <Radar name="League avg" dataKey="league" stroke="#8ea0b2" fill="#8ea0b2" fillOpacity={0.15} />
-              <Legend />
+              <Legend verticalAlign="top" />
               <Tooltip
                 formatter={(value: number, name: string, props) => {
                   const raw = name === team ? props.payload.rawTeam : props.payload.rawLeague;
@@ -400,13 +400,13 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
         <h2 className="card-title">Rolling form & per-match xG</h2>
         <div className="chart-wrap">
           <ResponsiveContainer>
-            <LineChart data={form} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
+            <LineChart data={form} margin={{ top: 30, right: 30, bottom: 10, left: 10 }}>
               <CartesianGrid stroke="#2a3644" />
               <XAxis dataKey="gameweek" stroke="#8ea0b2" />
               <YAxis yAxisId="left" stroke="#8ea0b2" />
               <YAxis yAxisId="right" orientation="right" stroke="#8ea0b2" />
               <Tooltip />
-              <Legend />
+              <Legend verticalAlign="top" />
               <Line yAxisId="left" dataKey="rolling5PPG" name="Rolling 5 PPG" stroke="#f5a623" dot={false} />
               <Line yAxisId="left" dataKey="cumulativePPG" name="Cumulative PPG" stroke="#4db3ff" dot={false} />
               <Line yAxisId="right" dataKey="matchXG" name="Match xG" stroke="#7cd992" strokeDasharray="4 2" dot={false} />
@@ -420,7 +420,7 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
         <h2 className="card-title">xG vs Goals per match</h2>
         <div className="chart-wrap">
           <ResponsiveContainer>
-            <ComposedChart data={perMatchData} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
+            <ComposedChart data={perMatchData} margin={{ top: 30, right: 30, bottom: 10, left: 10 }}>
               <CartesianGrid stroke="#2a3644" />
               <XAxis dataKey="gameweek" stroke="#8ea0b2" />
               <YAxis yAxisId="left" stroke="#8ea0b2" />
@@ -437,7 +437,7 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
                   );
                 }}
               />
-              <Legend />
+              <Legend verticalAlign="top" />
               <Bar yAxisId="left" dataKey="xG" name="xG" fill="#4db3ff" opacity={0.7} />
               <Bar yAxisId="left" dataKey="Goals" name="Goals" fill="#7cd992" opacity={0.7} />
               <Line yAxisId="right" dataKey="luck" name="Goals − xG" stroke="#f5a623" dot={false} strokeWidth={2} />
@@ -451,7 +451,7 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
         <h2 className="card-title">Rolling finishing efficiency & 1st-half xG share (5-match window)</h2>
         <div className="chart-wrap">
           <ResponsiveContainer>
-            <LineChart data={rollingData} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
+            <LineChart data={rollingData} margin={{ top: 30, right: 30, bottom: 10, left: 10 }}>
               <CartesianGrid stroke="#2a3644" />
               <XAxis dataKey="gameweek" stroke="#8ea0b2" />
               <YAxis yAxisId="left" stroke="#8ea0b2" domain={[0, "auto"]} tickFormatter={(v) => v.toFixed(1)} />
@@ -461,7 +461,7 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
                   [name === "1st Half xG %" ? `${value?.toFixed(1)}%` : value?.toFixed(2), name]
                 }
               />
-              <Legend />
+              <Legend verticalAlign="top" />
               <ReferenceLine yAxisId="left" y={1} stroke="#8ea0b2" strokeDasharray="4 2" label={{ value: "1.0", fill: "#8ea0b2", fontSize: 10 }} />
               <ReferenceLine yAxisId="right" y={50} stroke="#8ea0b2" strokeDasharray="4 2" />
               <Line yAxisId="left" dataKey="finishingEff" name="Goals / xG" stroke="#7cd992" dot={false} connectNulls />
@@ -481,7 +481,7 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
               <XAxis dataKey="gameweek" stroke="#8ea0b2" />
               <YAxis stroke="#8ea0b2" />
               <Tooltip />
-              <Legend />
+              <Legend verticalAlign="top" />
               <Bar dataKey="firstHalfXG" name="1st-half xG" fill="#4db3ff" />
               <Bar dataKey="secondHalfXG" name="2nd-half xG" fill="#7cd992" />
             </BarChart>
@@ -499,7 +499,7 @@ function FormTab({ form }: { form: ReturnType<typeof buildTeamForm> }) {
                 <XAxis dataKey="label" stroke="#8ea0b2" />
                 <YAxis stroke="#8ea0b2" allowDecimals={false} />
                 <Tooltip />
-                <Legend />
+                <Legend verticalAlign="top" />
                 <Bar dataKey="W" stackId="a" fill="#7cd992" name="Win" />
                 <Bar dataKey="D" stackId="a" fill="#8ea0b2" name="Draw" />
                 <Bar dataKey="L" stackId="a" fill="#e05252" name="Loss" />
@@ -604,7 +604,7 @@ function GoalsTab({ team, goals }: { team: string; goals: Goal[] }) {
               <XAxis dataKey="situation" stroke="#8ea0b2" />
               <YAxis stroke="#8ea0b2" />
               <Tooltip />
-              <Legend />
+              <Legend verticalAlign="top" />
               <Bar dataKey="for" name="Scored" fill="#7cd992" />
               <Bar dataKey="against" name="Conceded" fill="#e05252" />
             </BarChart>
@@ -621,7 +621,7 @@ function GoalsTab({ team, goals }: { team: string; goals: Goal[] }) {
               <YAxis stroke="#8ea0b2" />
               <ReferenceLine y={0} stroke="#6b7785" />
               <Tooltip />
-              <Legend />
+              <Legend verticalAlign="top" />
               <Bar dataKey="for" name="Scored" fill="#7cd992" />
               <Bar dataKey="against" name="Conceded" fill="#e05252" />
             </BarChart>

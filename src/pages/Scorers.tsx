@@ -32,15 +32,30 @@ function situationBucket(sit: string): string {
   return "Other Set-Piece Goals";
 }
 
-const MINUTE_BUCKETS = ["0–15", "15–30", "30–45", "45–60", "60–75", "75–90", "90+"];
-function minuteBucket(t: number): string {
-  if (t <= 15) return "0–15";
-  if (t <= 30) return "15–30";
-  if (t <= 45) return "30–45";
-  if (t <= 60) return "45–60";
-  if (t <= 75) return "60–75";
-  if (t <= 90) return "75–90";
-  return "90+";
+const MINUTE_BUCKETS = ["0–15", "16–30", "31–45", "45+ET", "46–60", "61–75", "76–90", "90+ET"];
+
+const BUCKET_COLORS: Record<string, string> = {
+  "0–15":   "#4db3ff",
+  "16–30":  "#4db3ff",
+  "31–45":  "#4db3ff",
+  "45+ET":  "#b278f0",
+  "46–60":  "#7cd992",
+  "61–75":  "#7cd992",
+  "76–90":  "#7cd992",
+  "90+ET":  "#f5a623",
+};
+
+function minuteBucket(goalTime: number, addedTime: number | null): string {
+  const isET = addedTime != null && addedTime > 0;
+  if (goalTime === 45 && isET) return "45+ET";
+  if (goalTime >= 90 && isET) return "90+ET";
+  if (goalTime > 90) return "90+ET";
+  if (goalTime <= 15) return "0–15";
+  if (goalTime <= 30) return "16–30";
+  if (goalTime <= 45) return "31–45";
+  if (goalTime <= 60) return "46–60";
+  if (goalTime <= 75) return "61–75";
+  return "76–90";
 }
 
 export function Scorers() {
@@ -156,12 +171,12 @@ function SituationBreakdown({ scorers }: { scorers: ScorerRow[] }) {
       <h2 className="card-title">Goal breakdown by situation (top 10)</h2>
       <div className="chart-wrap">
         <ResponsiveContainer>
-          <BarChart data={data} margin={{ top: 10, right: 20, bottom: 60, left: 10 }}>
+          <BarChart data={data} margin={{ top: 40, right: 20, bottom: 80, left: 10 }}>
             <CartesianGrid stroke="#2a3644" />
             <XAxis dataKey="player" stroke="#8ea0b2" angle={-35} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
             <YAxis stroke="#8ea0b2" allowDecimals={false} />
             <Tooltip />
-            <Legend />
+            <Legend verticalAlign="top" />
             {buckets.map((b) => (
               <Bar key={b} dataKey={b} stackId="a" fill={SITUATION_COLORS[b]} />
             ))}
@@ -232,12 +247,12 @@ function HomeAwayBar({ scorers }: { scorers: ScorerRow[] }) {
       <h2 className="card-title">Home vs Away goals (top 10)</h2>
       <div className="chart-wrap">
         <ResponsiveContainer>
-          <BarChart data={data} margin={{ top: 10, right: 20, bottom: 60, left: 10 }}>
+          <BarChart data={data} margin={{ top: 40, right: 20, bottom: 80, left: 10 }}>
             <CartesianGrid stroke="#2a3644" />
             <XAxis dataKey="player" stroke="#8ea0b2" angle={-35} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
             <YAxis stroke="#8ea0b2" allowDecimals={false} />
             <Tooltip />
-            <Legend />
+            <Legend verticalAlign="top" />
             <Bar dataKey="Home" fill="#4db3ff" />
             <Bar dataKey="Away" fill="#7cd992" />
           </BarChart>
@@ -260,12 +275,12 @@ function HalfBar({ scorers }: { scorers: ScorerRow[] }) {
       <h2 className="card-title">First half vs Second half goals (top 10)</h2>
       <div className="chart-wrap">
         <ResponsiveContainer>
-          <BarChart data={data} margin={{ top: 10, right: 20, bottom: 60, left: 10 }}>
+          <BarChart data={data} margin={{ top: 40, right: 20, bottom: 80, left: 10 }}>
             <CartesianGrid stroke="#2a3644" />
             <XAxis dataKey="player" stroke="#8ea0b2" angle={-35} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
             <YAxis stroke="#8ea0b2" allowDecimals={false} />
             <Tooltip />
-            <Legend />
+            <Legend verticalAlign="top" />
             <Bar dataKey="1st Half" stackId="first" fill="#4db3ff" />
             <Bar dataKey="1st Half ET" stackId="first" fill="#1a5e8a" />
             <Bar dataKey="2nd Half" stackId="second" fill="#f5a623" />
@@ -294,7 +309,7 @@ function GoalMinuteHistogram({ goals, players, teams, selectedPlayer, selectedTe
       return true;
     });
     const counts: Record<string, number> = Object.fromEntries(MINUTE_BUCKETS.map((b) => [b, 0]));
-    for (const g of filtered) counts[minuteBucket(g.GoalTime)]++;
+    for (const g of filtered) counts[minuteBucket(g.GoalTime, g.AddedTime)]++;
     return MINUTE_BUCKETS.map((b) => ({ minute: b, Goals: counts[b] }));
   }, [goals, selectedPlayer, selectedTeam]);
 
@@ -317,12 +332,25 @@ function GoalMinuteHistogram({ goals, players, teams, selectedPlayer, selectedTe
             <CartesianGrid stroke="#2a3644" />
             <XAxis dataKey="minute" stroke="#8ea0b2" />
             <YAxis stroke="#8ea0b2" allowDecimals={false} />
-            <Tooltip />
+            <Tooltip formatter={(v: number) => [v, "Goals"]} />
             <Bar dataKey="Goals" fill="#4db3ff">
-              {data.map((_, i) => <Cell key={i} fill={i < 3 ? "#4db3ff" : i < 6 ? "#7cd992" : "#f5a623"} />)}
+              {data.map((d) => <Cell key={d.minute} fill={BUCKET_COLORS[d.minute]} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+      </div>
+      <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+        {[
+          { color: "#4db3ff", label: "1st half (0–45)" },
+          { color: "#b278f0", label: "45+ET (1st half added time)" },
+          { color: "#7cd992", label: "2nd half (46–90)" },
+          { color: "#f5a623", label: "90+ET (2nd half added time)" },
+        ].map(({ color, label }) => (
+          <span key={label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#8ea0b2" }}>
+            <span style={{ width: 10, height: 10, background: color, display: "inline-block", borderRadius: 2 }} />
+            {label}
+          </span>
+        ))}
       </div>
     </div>
   );
