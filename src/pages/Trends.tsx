@@ -8,15 +8,19 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from "recharts";
 import {
   buildGWAggregates,
-  buildScoredFirstWinRate,
-  buildStandings,
+  buildTeamStats,
+  getTeams,
 } from "../lib/derive";
 import { useWorkbook } from "../store/workbook";
 
@@ -24,8 +28,6 @@ export function Trends() {
   const matches = useWorkbook((s) => s.matches);
   const goals = useWorkbook((s) => s.goals);
   const gws = useMemo(() => buildGWAggregates(matches), [matches]);
-  const standings = useMemo(() => buildStandings(matches), [matches]);
-  const scoredFirst = useMemo(() => buildScoredFirstWinRate(matches, goals), [matches, goals]);
 
   const goalMix = useMemo(() => {
     const NAMED = new Set(["Regular", "FastBreak", "Fast Break", "Fast-Break", "Penalty", "Corner"]);
@@ -62,27 +64,43 @@ export function Trends() {
     };
   }, [goals, matches]);
 
-  // latest completed GW — assume "latest" is max
-  const latestGW = gws.length > 0 ? gws[gws.length - 1].gameweek : 0;
-  const perfThisGW = useMemo(() => {
-    if (latestGW === 0) return [];
-    return standings
-      .map((row) => {
-        // Find the team's match in latestGW
-        const m = matches.find(
-          (mm) => mm.Gameweek === latestGW && (mm.Home === row.team || mm.Away === row.team)
-        );
-        if (!m) return null;
-        const isHome = m.Home === row.team;
-        const pts = isHome ? m.HomePoints : m.AwayPoints;
-        const xPts = isHome ? m.HomexPts : m.AwayxPts;
-        return { team: row.team, diff: pts - xPts };
-      })
-      .filter((x): x is { team: string; diff: number } => x !== null);
-  }, [standings, matches, latestGW]);
+  // Season xG vs Goals per team
+  const teamXGvsGoals = useMemo(() => {
+    const teams = getTeams(matches);
+    return teams.map((team) => {
+      const ts = buildTeamStats(team, matches);
+      return {
+        team,
+        xG: parseFloat(ts.total.xG.toFixed(1)),
+        goals: ts.total.goalsFor,
+        diff: parseFloat((ts.total.goalsFor - ts.total.xG).toFixed(1)),
+      };
+    }).sort((a, b) => b.xG - a.xG);
+  }, [matches]);
 
-  const over = [...perfThisGW].sort((a, b) => b.diff - a.diff).slice(0, 3);
-  const under = [...perfThisGW].sort((a, b) => a.diff - b.diff).slice(0, 3);
+  const xGGoalsMax = useMemo(
+    () => Math.ceil(Math.max(...teamXGvsGoals.map((d) => Math.max(d.xG, d.goals)), 0) / 5) * 5 + 5,
+    [teamXGvsGoals]
+  );
+
+  // Big chances per team
+  const bigChancesData = useMemo(() => {
+    const teams = getTeams(matches);
+    return teams
+      .map((team) => {
+        const ts = buildTeamStats(team, matches);
+        return {
+          team,
+          Converted: ts.total.bigChances - ts.total.bigChancesMissed,
+          Missed: ts.total.bigChancesMissed,
+          total: ts.total.bigChances,
+          convRate: ts.total.bigChances > 0
+            ? ((ts.total.bigChances - ts.total.bigChancesMissed) / ts.total.bigChances) * 100
+            : 0,
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+  }, [matches]);
 
   return (
     <div>
@@ -169,51 +187,100 @@ export function Trends() {
       </div>
 
       <div className="card">
-        <h2 className="card-title">Latest GW ({latestGW}) — biggest over/under-performers vs xPts</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <div className="subtle" style={{ marginBottom: 6 }}>Over-performed</div>
-            {over.map((o) => (
-              <div key={o.team} className="stat-tile" style={{ marginBottom: 6 }}>
-                <b>{o.team}</b> <span style={{ color: "#7cd992" }}>+{o.diff.toFixed(2)}</span> pts vs xPts
-              </div>
-            ))}
-          </div>
-          <div>
-            <div className="subtle" style={{ marginBottom: 6 }}>Under-performed</div>
-            {under.map((u) => (
-              <div key={u.team} className="stat-tile" style={{ marginBottom: 6 }}>
-                <b>{u.team}</b> <span style={{ color: "#e05252" }}>{u.diff.toFixed(2)}</span> pts vs xPts
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2 className="card-title">"Scored first" win rate</h2>
+        <h2 className="card-title">Season xG vs Goals — clinical vs wasteful</h2>
         <div className="chart-wrap">
           <ResponsiveContainer>
-            <BarChart data={scoredFirst.map((s) => ({ team: s.team, winRate: s.winRate * 100, sample: s.matchesScoredFirst }))} layout="vertical" margin={{ left: 120 }}>
-              <CartesianGrid stroke="#2a3644" horizontal={false} />
-              <XAxis type="number" stroke="#8ea0b2" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-              <YAxis type="category" dataKey="team" stroke="#8ea0b2" width={110} tick={{ fontSize: 11 }} />
+            <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+              <CartesianGrid stroke="#2a3644" />
+              <XAxis
+                type="number"
+                dataKey="xG"
+                name="xG"
+                stroke="#8ea0b2"
+                domain={[0, xGGoalsMax]}
+                label={{ value: "Expected Goals (xG)", position: "insideBottom", offset: -10, fill: "#8ea0b2", fontSize: 12 }}
+              />
+              <YAxis
+                type="number"
+                dataKey="goals"
+                name="Goals"
+                stroke="#8ea0b2"
+                domain={[0, xGGoalsMax]}
+                label={{ value: "Goals Scored", angle: -90, position: "insideLeft", offset: 10, fill: "#8ea0b2", fontSize: 12 }}
+              />
+              <ZAxis range={[60, 60]} />
+              <ReferenceLine
+                segment={[{ x: 0, y: 0 }, { x: xGGoalsMax, y: xGGoalsMax }]}
+                stroke="#8ea0b2"
+                strokeDasharray="5 3"
+                label={{ value: "xG = Goals", position: "insideTopLeft", fill: "#8ea0b2", fontSize: 11 }}
+              />
               <Tooltip
                 content={({ active, payload }) => {
-                  if (!active || !payload || payload.length === 0) return null;
+                  if (!active || !payload?.length) return null;
                   const d = payload[0].payload;
                   return (
                     <div style={{ background: "#1c2530", border: "1px solid #2a3644", padding: 8, fontSize: 12 }}>
-                      <b>{d.team}</b><br />Win rate: {d.winRate.toFixed(1)}%<br />Scored first in {d.sample} matches
+                      <b>{d.team}</b><br />
+                      xG: {d.xG} · Goals: {d.goals}<br />
+                      <span style={{ color: d.diff >= 0 ? "#7cd992" : "#e05252" }}>
+                        {d.diff >= 0 ? "+" : ""}{d.diff} vs xG
+                      </span>
                     </div>
                   );
                 }}
               />
-              <Bar dataKey="winRate" fill="#4db3ff" />
+              <Scatter
+                data={teamXGvsGoals}
+                shape={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  const overperforming = payload.goals >= payload.xG;
+                  return (
+                    <g>
+                      <circle cx={cx} cy={cy} r={5} fill={overperforming ? "#7cd992" : "#e05252"} opacity={0.9} />
+                      <text x={cx + 8} y={cy + 4} fill="#cdd6e0" fontSize={10}>{payload.team}</text>
+                    </g>
+                  );
+                }}
+              />
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="subtle">
+          <span style={{ color: "#7cd992" }}>●</span> Above diagonal = scoring more than xG (clinical) &nbsp;
+          <span style={{ color: "#e05252" }}>●</span> Below = scoring less than xG (wasteful)
+        </div>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">Big chances — created vs converted (season)</h2>
+        <div style={{ height: 520 }}>
+          <ResponsiveContainer>
+            <BarChart data={bigChancesData} layout="vertical" margin={{ top: 10, right: 80, bottom: 10, left: 130 }}>
+              <CartesianGrid stroke="#2a3644" horizontal={false} />
+              <XAxis type="number" stroke="#8ea0b2" allowDecimals={false} />
+              <YAxis type="category" dataKey="team" stroke="#8ea0b2" width={120} tick={{ fontSize: 11 }} />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div style={{ background: "#1c2530", border: "1px solid #2a3644", padding: 8, fontSize: 12 }}>
+                      <b>{d.team}</b><br />
+                      Created: {d.total} big chances<br />
+                      Converted: {d.Converted} ({d.convRate.toFixed(0)}%)<br />
+                      Missed: {d.Missed}
+                    </div>
+                  );
+                }}
+              />
+              <Legend verticalAlign="top" />
+              <Bar dataKey="Converted" stackId="a" fill="#7cd992" name="Converted" />
+              <Bar dataKey="Missed" stackId="a" fill="#e05252" name="Missed" />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="subtle">Only counts matches in which the team opened the scoring.</div>
+        <div className="subtle">Sorted by total big chances created. Green = converted, red = missed.</div>
       </div>
     </div>
   );
